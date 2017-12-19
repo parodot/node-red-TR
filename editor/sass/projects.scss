@@ -107,6 +107,33 @@
 
 }
 .projects-dialog-screen-start {
+    .projects-dialog-screen-start-hero {
+        // background: url(https://nodered.org/images/title-wave.png) no-repeat 0% 100% #8f0000;
+        // background-size: contain;
+        text-align: center;
+        font-size: 2em;
+        padding: 10px;
+        min-height: 60px;
+        color: #555;
+        h1 {
+            text-align: center;
+            color: #f0f0f0;
+            font-size: 2em;
+            font-weight: normal;
+        }
+    }
+    .projects-dialog-screen-start-body {
+        min-height: 400px;
+        line-height: 1.6em;
+        p {
+            font-size: 1.1em;
+            margin-bottom: 20px;
+        }
+        p:first-child {
+            font-weight: 500;
+            font-size: 1.2em;
+        }
+    }
     button.editor-button {
         width: calc(50% - 40px);
         margin: 20px;
@@ -180,7 +207,6 @@
             border-right-color: #aaa;
         }
     }
-
     i {
         color: #ccc;
         font-size: 2em;
@@ -445,7 +471,13 @@
     span {
         margin: 0 6px;
     }
-    .button-group {
+    a {
+        color: currentColor;
+        &.disabled {
+            pointer-events: none;
+        }
+    }
+    .sidebar-version-control-change-entry-tools {
         position: absolute;
         top: 4px;
         right: 4px;
@@ -456,7 +488,7 @@
     }
 
     &:hover {
-        .button-group {
+        .sidebar-version-control-change-entry-tools {
             display: block;
         }
     }
@@ -592,6 +624,9 @@
             border-right-color:#999;
         }
     }
+    &.unselectable {
+        color: #ccc;
+    }
 
     i {
         color: #999;
@@ -627,3 +662,91 @@
     }
 }
 .projects-dialog-file-list-entry-file-type-git { color: #999 }
+
+.projects-dialog-remote-list {
+    .red-ui-editableList-container {
+        padding: 0;
+        li {
+            padding: 0;
+            border: none;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+    }
+}
+
+.projects-dialog-remote-list-entry-header {
+    padding: 8px 10px;
+    background: #f6f6f6;
+    margin-bottom: 8px;
+}
+.projects-dialog-remote-list-entry-delete {
+    float: right;
+}
+.projects-dialog-remote-list-entry-copy {
+    float: right;
+}
+
+/*
+.expandable-list-entry {
+    .exandable-list-entry-header {
+        padding: 15px 0;
+        cursor: pointer;
+        &:hover {
+            background: #f3f3f3;
+        }
+        i {
+            width: 16px;
+            text-align: center;
+        }
+        .fa-angle-right {
+            color: #333;
+            transition: all 0.2s ease-in-out;
+        }
+    }
+    &.expanded .fa-angle-right {
+        transform: rotate(90deg);
+    }
+}
+*/
+
+.projects-dialog-branch-list {
+    .red-ui-editableList-container li:last-child {
+        border-bottom: none;
+    }
+}
+
+.projects-dialog-branch-list-entry {
+    span {
+        display: inline-block;
+    }
+    span:first-child {
+        text-align: center;
+        min-width: 30px;
+    }
+    .branch-name {
+        min-width: 150px;
+    }
+    .branch-remote-name {
+        color: #aaa;
+        font-size: 0.9em;
+        min-width: 150px;
+    }
+    .branch-remote-status {
+        color: #aaa;
+        font-size: 0.9em;
+    }
+    .commit {
+        color: #aaa;
+        font-size: 0.9em;
+        padding: 2px 5px;
+
+    }
+
+    .projects-dialog-branch-list-entry-tools {
+        float: right;
+        margin-right: 20px;
+        font-size: 0.9em;
+        color: #999;
+    }
+}

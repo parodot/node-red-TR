@@ -60,6 +60,7 @@ RED.projects.settings = (function() {
             },
             open: function(tray) {
                 var project = RED.projects.getActiveProject();
+
                 var trayBody = tray.find('.editor-tray-body');
                 var settingsContent = $('<div></div>').appendTo(trayBody);
                 var tabContainer = $('<div></div>',{id:"user-settings-tabs-container"}).appendTo(settingsContent);
@@ -133,6 +134,7 @@ RED.projects.settings = (function() {
                         },
                         200: function(data) {
                             done(null,data);
+                            RED.sidebar.versionControl.refresh(true);
                         },
                         400: {
                             'unexpected_error': function(error) {
@@ -148,7 +150,12 @@ RED.projects.settings = (function() {
     }
     function updateProjectDescription(activeProject, container) {
         container.empty();
-        var desc = marked(activeProject.description||"");
+        var desc;
+        if (activeProject.description) {
+            desc = marked(activeProject.description);
+        } else {
+            desc = '<span class="node-info-none">'+'No description available'+'</span>';
+        }
         var description = addTargetToExternalLinks($('<span class="bidiAware" dir=\"'+RED.text.bidi.resolveBaseTextDir(desc)+'">'+desc+'</span>')).appendTo(container);
         description.find(".bidiAware").contents().filter(function() { return this.nodeType === 3 && this.textContent.trim() !== "" }).wrap( "<span></span>" );
     }
@@ -191,6 +198,7 @@ RED.projects.settings = (function() {
                             done(error,null);
                         },
                         200: function(data) {
+                            RED.sidebar.versionControl.refresh(true);
                             done(null,data);
                         },
                         400: {
@@ -280,7 +288,7 @@ RED.projects.settings = (function() {
             }
         }
         if (unknownCount > 0) {
-            depsList.editableList('addItem',{index:1, label:"Unknown Dependencies"}); // TODO: nls
+            depsList.editableList('addItem',{index:1, label:"Unlisted dependencies"}); // TODO: nls
         }
         if (unusedCount > 0) {
             depsList.editableList('addItem',{index:3, label:"Unused dependencies"}); // TODO: nls
@@ -320,6 +328,7 @@ RED.projects.settings = (function() {
                                 done(error,null);
                             },
                             200: function(data) {
+                                RED.sidebar.versionControl.refresh(true);
                                 done(null,data);
                             },
                             400: {
@@ -418,15 +427,18 @@ RED.projects.settings = (function() {
 
     }
 
-    function showProjectFileListing(row,activeProject,current,done) {
+    function showProjectFileListing(row,activeProject,current,filter,done) {
         var dialog;
         var dialogBody;
         var filesList;
         var selected;
         var container = $('<div class="project-file-listing-container"></div>',{style:"position: relative; min-height: 175px; height: 175px;"}).hide().appendTo(row);
         var spinner = utils.addSpinnerOverlay(container);
-        $.getJSON("/projects/"+activeProject.name+"/files",function(result) {
+        $.getJSON("projects/"+activeProject.name+"/files",function(result) {
             var fileNames = Object.keys(result);
+            fileNames = fileNames.filter(function(fn) {
+                return !result[fn].status || !/D/.test(result[fn].status);
+            })
             var files = {};
             fileNames.sort();
             fileNames.forEach(function(file) {
@@ -459,13 +471,13 @@ RED.projects.settings = (function() {
                 return result;
             }
             var files = sortFiles("",files,"");
-            createFileSubList(container,files.children,current,done,"height: 175px");
+            createFileSubList(container,files.children,current,filter,done,"height: 175px");
             spinner.remove();
         });
         return container;
     }
 
-    function createFileSubList(container, files, current, onselect, style) {
+    function createFileSubList(container, files, current, filter, onselect, style) {
         style = style || "";
         var list = $('<ol>',{class:"projects-dialog-file-list", style:style}).appendTo(container).editableList({
             addButton: false,
@@ -481,7 +493,7 @@ RED.projects.settings = (function() {
                         } else {
                             children.hide();
                         }
-                        createFileSubList(children,entry.children,current,onselect);
+                        createFileSubList(children,entry.children,current,filter,onselect);
                         header.addClass("selectable");
                         header.click(function(e) {
                             if ($(this).hasClass("expanded")) {
@@ -507,19 +519,23 @@ RED.projects.settings = (function() {
                         header.addClass("projects-dialog-file-list-entry-file-type-git");
                     }
                     $('<span class="projects-dialog-file-list-entry-file"> <i class="fa '+fileIcon+'"></i></span>').appendTo(header);
-                    header.addClass("selectable");
-                    if (entry.path === current) {
-                        header.addClass("selected");
+                    if (filter.test(entry.name)) {
+                        header.addClass("selectable");
+                        if (entry.path === current) {
+                            header.addClass("selected");
+                        }
+                        header.click(function(e) {
+                            $(".projects-dialog-file-list-entry.selected").removeClass("selected");
+                            $(this).addClass("selected");
+                            onselect(entry.path);
+                        })
+                        header.dblclick(function(e) {
+                            e.preventDefault();
+                            onselect(entry.path,true);
+                        })
+                    } else {
+                        header.addClass("unselectable");
                     }
-                    header.click(function(e) {
-                        $(".projects-dialog-file-list-entry.selected").removeClass("selected");
-                        $(this).addClass("selected");
-                        onselect(entry.path);
-                    })
-                    header.dblclick(function(e) {
-                        e.preventDefault();
-                        onselect(entry.path,true);
-                    })
                 }
                 $('<span class="projects-dialog-file-list-entry-name" style=""></span>').text(entry.name).appendTo(header);
             }
@@ -657,7 +673,7 @@ RED.projects.settings = (function() {
                 } else {
                     $(this).addClass('selected');
                     flowFileLabel.css('color','inherit');
-                    var fileList = showProjectFileListing(flowFileLabel,activeProject,flowFileInput.val(),function(result,isDblClick) {
+                    var fileList = showProjectFileListing(flowFileLabel,activeProject,flowFileInput.val(), /.*\.json$/,function(result,isDblClick) {
                         if (result) {
                             flowFileInput.val(result);
                         }
@@ -887,7 +903,7 @@ RED.projects.settings = (function() {
                         },
                         200: function(data) {
                             activeProject = data;
-                            console.log("updating form");
+                            RED.sidebar.versionControl.refresh(true);
                             updateForm();
                             done();
                         },
@@ -935,191 +951,297 @@ RED.projects.settings = (function() {
         updateForm();
     }
 
-    function createLocalRepositorySection(activeProject,pane) {
-        var title = $('<h3></h3>').text("Local Repository").appendTo(pane);
-        var repoContainer = $('<div class="user-settings-section"></div>').appendTo(pane);
-        var editRepoButton = $('<button class="editor-button editor-button-small" style="float: right;">edit</button>')
-            .appendTo(title)
-            .click(function(evt) {
-                editRepoButton.hide();
-                localRepoSearch.show();
-                formButtons.show();
-            });
+    function createLocalBranchListSection(activeProject,pane) {
+        var localBranchContainer = $('<div class="user-settings-section"></div>').appendTo(pane);
+        $('<h4></h4>').text("Branches").appendTo(localBranchContainer);
 
-        var row = $('<div class="user-settings-row"></div>').appendTo(repoContainer);
-        $('<label for=""></label>').text('Branch').appendTo(row);
-        var localRepoLabel = $('<div class="uneditable-input" style="padding:0">').appendTo(row);
+        var row = $('<div class="user-settings-row projects-dialog-branch-list"></div>').appendTo(localBranchContainer);
 
-        var hideLocalRepoBranchList = function() {
-            localRepoSearch.removeClass('selected');
-            localRepoLabel.css('height','');
-            localRepoBranchListRow.slideUp(100);
-        }
-        var localRepoText = $('<span style="display:inline-block; padding: 6px">').text(activeProject.branches.local).appendTo(localRepoLabel);
-        var localRepoSearch = $('<button class="editor-button" style="border-top-right-radius: 4px; border-bottom-right-radius: 4px; width: 36px; height: 34px; position: absolute; top: -1px; right: -1px;"><i class="fa fa-code-fork"></i></button>')
-            .hide()
-            .appendTo(localRepoLabel)
-            .click(function(e) {
-                e.preventDefault();
-                if ($(this).hasClass('selected')) {
-                    hideLocalRepoBranchList();
-                } else {
-                    $(this).addClass('selected');
-                    localRepoLabel.css('height','auto');
-                    localRepoBranchListRow.slideDown(100);
-                    localRepoBranchList.refresh("/projects/"+activeProject.name+"/branches");
-                    localRepoBranchList.focus();
+
+        var branchList = $('<ol>').appendTo(row).editableList({
+            addButton: false,
+            scrollOnAdd: false,
+            addItem: function(row,index,entry) {
+                var container = $('<div class="projects-dialog-branch-list-entry">').appendTo(row);
+                $('<span><i class="fa fa-code-fork"></i></span>').appendTo(container);
+                $('<span class="branch-name">').text(entry.name).appendTo(container);
+                // if (entry.commit) {
+                //     $('<span class="commit">').text(entry.commit.sha).appendTo(container);
+                // }
+
+                if (entry.remote) {
+                    $('<span class="branch-remote-name">').text(entry.remote||"").appendTo(container);
+                    if (entry.status.ahead+entry.status.behind > 0) {
+                        $('<span class="branch-remote-status">'+
+                            '<i class="fa fa-long-arrow-up"></i> <span>'+entry.status.ahead+'</span> '+
+                            '<i class="fa fa-long-arrow-down"></i> <span>'+entry.status.behind+'</span>'+
+                            '</span>').appendTo(container);
+                    }
                 }
 
-            });
+                var tools = $('<span class="projects-dialog-branch-list-entry-tools">').appendTo(container);
+                if (entry.current) {
+                    tools.text('current');
+                } else {
+                    $('<button class="editor-button editor-button-small">delete</button>')
+                        .appendTo(tools)
+                        .click(function(e) {
+                            e.preventDefault();
+                            var spinner = utils.addSpinnerOverlay(row).addClass('projects-dialog-spinner-contain');
+                            var notification = RED.notify("Are you sure you want to delete the local branch '"+entry.name+"'? This cannot be undone.", {
+                                type: "warning",
+                                modal: true,
+                                fixed: true,
+                                buttons: [
+                                    {
+                                        text: RED._("common.label.cancel"),
+                                        click: function() {
+                                            spinner.remove();
+                                            notification.close();
+                                        }
+                                    },{
+                                        text: 'Delete branch',
+                                        click: function() {
+                                            notification.close();
+                                            var url = "projects/"+activeProject.name+"/branches/"+entry.name;
+                                            var options = {
+                                                url: url,
+                                                type: "DELETE",
+                                                responses: {
+                                                    200: function(data) {
+                                                        row.fadeOut(200,function() {
+                                                            branchList.editableList('removeItem',entry);
+                                                            spinner.remove();
+                                                        });
+                                                    },
+                                                    400: {
+                                                        'git_delete_branch_unmerged': function(error) {
+                                                            notification = RED.notify("The local branch '"+entry.name+"' has unmerged changes that will be lost. Are you sure you want to delete it?", {
+                                                                type: "warning",
+                                                                modal: true,
+                                                                fixed: true,
+                                                                buttons: [
+                                                                    {
+                                                                        text: RED._("common.label.cancel"),
+                                                                        click: function() {
+                                                                            spinner.remove();
+                                                                            notification.close();
+                                                                        }
+                                                                    },{
+                                                                        text: 'Delete unmerged branch',
+                                                                        click: function() {
+                                                                            options.url += "?force=true";
+                                                                            notification.close();
+                                                                            utils.sendRequest(options);
+                                                                        }
+                                                                    }
+                                                                ]
+                                                            });
+                                                        },
+                                                        'unexpected_error': function(error) {
+                                                            console.log(error);
+                                                            spinner.remove();
+                                                        }
+                                                    },
+                                                }
+                                            }
+                                            utils.sendRequest(options);
+                                        }
+                                    }
 
-        var localRepoBranchListRow = $('<div>').hide().appendTo(localRepoLabel);
-        var localRepoBranchList = utils.createBranchList({
-            current: function() {
-                return  activeProject.branches.local
-            },
-            placeholder: "Find or create a branch",
-            container: localRepoBranchListRow,
-            onselect: function(body) {
-                localRepoText.text(body.name);
-                hideLocalRepoBranchList();
-            }
-        })
+                                ]
+                            })
+                        })
+                }
 
-        var hideEditForm = function() {
-            editRepoButton.show();
-            localRepoSearch.hide();
-            formButtons.hide();
-            localRepoBranchListRow.slideUp(100);
-            localRepoSearch.removeClass('selected');
-
-        }
-
-        var formButtons = $('<span class="button-group" style="position: relative; float: right; margin-right:0;"></span>').hide().appendTo(repoContainer);
-        $('<button class="editor-button">Cancel</button>')
-            .appendTo(formButtons)
-            .click(function(evt) {
-                evt.preventDefault();
-                hideEditForm();
-            });
-        var saveButton = $('<button class="editor-button">Save</button>')
-            .appendTo(formButtons)
-            .click(function(evt) {
-                evt.preventDefault();
-                hideEditForm();
-            });
-        var updateForm = function() {
-            // if (activeProject.settings.credentialSecretInvalid) {
-            //     credentialStateLabel.find(".user-settings-credentials-state-icon").removeClass().addClass("user-settings-credentials-state-icon fa fa-warning");
-            //     credentialStateLabel.find(".user-settings-credentials-state").text("Invalid encryption key");
-            // } else if (activeProject.settings.credentialsEncrypted) {
-            //     credentialStateLabel.find(".user-settings-credentials-state-icon").removeClass().addClass("user-settings-credentials-state-icon fa fa-lock");
-            //     credentialStateLabel.find(".user-settings-credentials-state").text("Encryption enabled");
-            // } else {
-            //     credentialStateLabel.find(".user-settings-credentials-state-icon").removeClass().addClass("user-settings-credentials-state-icon fa fa-unlock");
-            //     credentialStateLabel.find(".user-settings-credentials-state").text("Encryption disabled");
-            // }
-            // credentialSecretResetButton.toggleClass('disabled',!activeProject.settings.credentialsEncrypted);
-            // credentialSecretResetButton.prop('disabled',!activeProject.settings.credentialsEncrypted);
-        }
-    }
-
-    function createRemoteRepositorySection(activeProject,pane) {
-        var title = $('<h3></h3>').text("Git Remotes").appendTo(pane);
-        var repoContainer = $('<div class="user-settings-section"></div>').appendTo(pane);
-        var editRepoButton = $('<button class="editor-button editor-button-small" style="float: right;">edit</button>')
-            .appendTo(title)
-            .click(function(evt) {
-                editRepoButton.hide();
-                formButtons.show();
-            });
-
-        var row = $('<div class="user-settings-row"></div>').appendTo(repoContainer);
-
-
-        var remotesList = $("<ol>",{style:"height: 320px"}).appendTo(row);
-        remotesList.editableList({
-            addButton: "remote",
-            addItem: function(outer,index,entry) {
-                var row = $('<div class="user-settings-row"></div>').appendTo(outer);
-                $('<label for=""></label>').text('Name').appendTo(row);
-                $('<div class="uneditable-input">').text(entry.name).appendTo(row);
-                row = $('<div class="user-settings-row"></div>').appendTo(outer);
-                $('<label for=""></label>').text('Fetch URL').appendTo(row);
-                $('<div class="uneditable-input">').text(entry.urls.fetch).appendTo(row);
-                row = $('<div class="user-settings-row"></div>').appendTo(outer);
-                $('<label for=""></label>').text('Push URL').appendTo(row);
-                $('<div class="uneditable-input">').text(entry.urls.push).appendTo(row);
             }
         });
-        if (activeProject.hasOwnProperty('remotes')) {
-            for (var name in activeProject.remotes) {
-                if (activeProject.remotes.hasOwnProperty(name)) {
-                    remotesList.editableList('addItem',{name:name,urls:activeProject.remotes[name]});
+        $.getJSON("projects/"+activeProject.name+"/branches",function(result) {
+            if (result.branches) {
+                result.branches.sort(function(A,B) {
+                    if (A.current) { return -1 }
+                    if (B.current) { return 1 }
+                    return A.name.localeCompare(B.name);
+                });
+                result.branches.forEach(function(branch) {
+                    branchList.editableList('addItem',branch);
+                })
+            }
+        })
+    }
+    function createRemoteRepositorySection(activeProject,pane) {
+        $('<h3></h3>').text("Version Control").appendTo(pane);
+
+        createLocalBranchListSection(activeProject,pane);
+
+        var repoContainer = $('<div class="user-settings-section"></div>').appendTo(pane);
+        var title = $('<h4></h4>').text("Git remotes").appendTo(repoContainer);
+
+        var editRepoButton = $('<button class="editor-button editor-button-small" style="float: right;">edit</button>')
+            .appendTo(title)
+            .click(function(evt) {
+                editRepoButton.hide();
+                formButtons.show();
+
+                $('.projects-dialog-remote-list-entry-delete').show();
+                remoteListAddButton.show();
+            });
+
+
+
+
+        row = $('<div class="user-settings-row projects-dialog-remote-list"></div>').appendTo(repoContainer);
+        var remotesList = $('<ol>').appendTo(row);
+        remotesList.editableList({
+            addButton: 'add remote repository',
+            height: 'auto',
+            addItem: function(outer,index,entry) {
+
+                var header = $('<div class="projects-dialog-remote-list-entry-header"></div>').appendTo(outer);
+                entry.header = $('<span>').text(entry.name||"Add new remote").appendTo(header);
+                var body = $('<div>').appendTo(outer);
+                entry.body = body;
+                if (entry.name) {
+                    entry.removeButton = $('<button class="editor-button editor-button-small projects-dialog-remote-list-entry-delete">remove</button>')
+                        .hide()
+                        .appendTo(header)
+                        .click(function(e) {
+                            entry.removed = true;
+                            body.fadeOut(100);
+                            entry.header.css("text-decoration","line-through")
+                            entry.header.css("font-style","italic")
+                            $(this).hide();
+                        });
+                    if (entry.urls.fetch === entry.urls.push) {
+                        row = $('<div class="user-settings-row"></div>').appendTo(body);
+                        $('<label for=""></label>').text('URL').appendTo(row);
+                        $('<div class="uneditable-input">').text(entry.urls.fetch).appendTo(row);
+                    } else {
+                        row = $('<div class="user-settings-row"></div>').appendTo(body);
+                        $('<label for=""></label>').text('Fetch URL').appendTo(row);
+                        $('<div class="uneditable-input">').text(entry.urls.fetch).appendTo(row);
+                        row = $('<div class="user-settings-row"></div>').appendTo(body);
+                        $('<label for=""></label>').text('Push URL').appendTo(row);
+                        $('<div class="uneditable-input">').text(entry.urls.push).appendTo(row);
+                    }
+                } else {
+                    row = $('<div class="user-settings-row"></div>').appendTo(body);
+                    $('<label for=""></label>').text('Remote name').appendTo(row);
+                    entry.nameInput = $('<input type="text">').appendTo(row);
+
+                    row = $('<div class="user-settings-row"></div>').appendTo(body);
+                    var fetchLabel = $('<label for=""></label>').text('URL').appendTo(row);
+                    entry.urlInput = $('<input type="text">').appendTo(row);
                 }
             }
-        }
+        });
 
-
-
-        // row = $('<div class="user-settings-row"></div>').appendTo(repoContainer);
-
-        // if (activeProject.hasOwnProperty('remotes')) {
-        //     $('<label for=""></label>').text('URL').appendTo(row);
-        //     for (var name in activeProject.remotes) {
-        //         if (activeProject.remotes.hasOwnProperty(name)) {
-        //             var repos = activeProject.remotes[name];
-        //             if (repos.fetch === repos.push) {
-        //                 $('<div class="uneditable-input">').text(repos.fetch).appendTo(row);
-        //                 $('<div class="projects-edit-form-sublabel"><small></small></div>').appendTo(row).find('small').text(name+" fetch/push");
-        //             } else {
-        //                 $('<div class="uneditable-input">').text(repos.fetch).appendTo(row);
-        //                 $('<div class="projects-edit-form-sublabel"><small></small></div>').appendTo(row).find('small').text(name+" fetch");
-        //                 $('<label for=""></label>').appendTo(row);
-        //                 $('<div class="uneditable-input">').text(repos.push).appendTo(row);
-        //                 $('<div class="projects-edit-form-sublabel"><small></small></div>').appendTo(row).find('small').text(name+" push");
-        //                 // $('<span>').text(repos.fetch+" (fetch)").appendTo(repoRow);
-        //                 // $('<span>').text(repos.push+" (push)").appendTo(repoRow);
-        //             }
-        //         }
-        //     }
-        //     if (activeProject.branches.hasOwnProperty('remote')) {
-        //         row = $('<div class="user-settings-row"></div>').appendTo(repoContainer);
-        //         $('<label for="" style="text-align: right;box-sizing: border-box; padding-right: 25px;">Branch</label>').appendTo(row);
-        //         $('<div class="uneditable-input">').text(activeProject.branches.remote).appendTo(row);
-        //
-        //         row = $('<div class="user-settings-row"></div>').appendTo(repoContainer);
-        //         $('<label for="" style="text-align: right;box-sizing: border-box; padding-right: 25px;">Username</label>').appendTo(row);
-        //         $('<div class="uneditable-input">').appendTo(row);
-        //
-        //         row = $('<div class="user-settings-row"></div>').appendTo(repoContainer);
-        //         $('<label for="" style="text-align: right;box-sizing: border-box; padding-right: 25px;">Password</label>').appendTo(row);
-        //         $('<div class="uneditable-input">').html("&bull; &bull; &bull; &bull; &bull; &bull; &bull; &bull;").appendTo(row);
-        //     }
-        // } else {
-        //
-        //
-        // }
+        var remoteListAddButton = row.find(".red-ui-editableList-addButton").hide();
 
         var hideEditForm = function() {
             editRepoButton.show();
             formButtons.hide();
+            $('.projects-dialog-remote-list-entry-delete').hide();
+            remoteListAddButton.hide();
         }
 
-        var formButtons = $('<span class="button-group" style="position: relative; float: right; margin-right:0;"></span>').hide().appendTo(repoContainer);
+        var formButtons = $('<span class="button-group" style="position: relative; float: right; margin-right:0;"></span>')
+            .hide().appendTo(repoContainer);
         $('<button class="editor-button">Cancel</button>')
             .appendTo(formButtons)
             .click(function(evt) {
                 evt.preventDefault();
+
+                var items = remotesList.editableList('items');
+                items.each(function() {
+                    var data = $(this).data('data');
+                    if (!data.name) {
+                        remotesList.editableList('removeItem',data);
+                    } else if (data.removed) {
+                        delete data.removed;
+                        data.body.show();
+                        data.header.css("text-decoration","");
+                        data.header.css("font-style","");
+                    }
+                })
+
+
                 hideEditForm();
             });
         var saveButton = $('<button class="editor-button">Save</button>')
             .appendTo(formButtons)
             .click(function(evt) {
                 evt.preventDefault();
-                hideEditForm();
+                var spinner = utils.addSpinnerOverlay(repoContainer);
+
+                var body = {
+                    remotes: {}
+                }
+
+                var items = remotesList.editableList('items');
+                items.each(function() {
+                    var data = $(this).data('data');
+                    if (!data.name) {
+                        body.remotes[data.nameInput.val()] = {
+                            url: data.urlInput.val()
+                        };
+                        remotesList.editableList('removeItem',data);
+                    } else if (data.removed) {
+                        body.remotes[data.name] = {
+                            removed: true
+                        };
+                        delete data.removed;
+                        data.body.show();
+                        data.header.css("text-decoration","");
+                        data.header.css("font-style","");
+                    }
+                })
+
+                var done = function(err) {
+                    spinner.remove();
+                    if (err) {
+                        console.log(err);
+                        return;
+                    }
+                    hideEditForm();
+                }
+                var payload = { git: body };
+
+                // console.log(JSON.stringify(payload,null,4));
+                RED.deploy.setDeployInflight(true);
+                utils.sendRequest({
+                    url: "projects/"+activeProject.name,
+                    type: "PUT",
+                    responses: {
+                        0: function(error) {
+                            done(error);
+                        },
+                        200: function(data) {
+                            activeProject.git.remotes = data.git.remotes;
+
+                            updateForm();
+                            done();
+                        },
+                        400: {
+                            'unexpected_error': function(error) {
+                                console.log(error);
+                                done(error);
+                            }
+                        },
+                    }
+                },payload);
             });
-        var updateForm = function() { }
+        var updateForm = function() {
+            remotesList.editableList('empty');
+            if (activeProject.git.hasOwnProperty('remotes')) {
+                for (var name in activeProject.git.remotes) {
+                    if (activeProject.git.remotes.hasOwnProperty(name)) {
+                        remotesList.editableList('addItem',{name:name,urls:activeProject.git.remotes[name]});
+                    }
+                }
+            }
+        }
+        updateForm();
     }
 
 

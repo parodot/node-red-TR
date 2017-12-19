@@ -29,6 +29,9 @@ var Projects = require("./Project");
 var settings;
 var runtime;
 
+var projectsEnabled = true;
+var projectLogMessages = [];
+
 var projectsDir;
 var activeProject
 
@@ -36,11 +39,15 @@ function init(_settings, _runtime) {
     settings = _settings;
     runtime = _runtime;
     log = runtime.log;
-    gitTools.init(_settings, _runtime);
 
-    Projects.init(settings,runtime);
-
-    projectsDir = fspath.join(settings.userDir,"projects");
+    try {
+        if (settings.editorTheme.projects.enabled === false) {
+            projectLogMessages.push(log._("storage.localfilesystem.projects.disabled"))
+            projectsEnabled = false;
+        }
+    } catch(err) {
+        projectsEnabled = true;
+    }
 
     if (settings.flowFile) {
         flowsFile = settings.flowFile;
@@ -73,27 +80,48 @@ function init(_settings, _runtime) {
     credentialsFile = fspath.join(settings.userDir,ffBase+"_cred"+ffExt);
     credentialsFileBackup = getBackupFilename(credentialsFile)
 
-    if (!settings.readOnly) {
-        return fs.ensureDir(projectsDir)
-             //TODO: this is accessing settings from storage directly as settings
-             //      has not yet been initialised. That isn't ideal - can this be deferred?
-            .then(storageSettings.getSettings)
-            .then(function(globalSettings) {
-                if (!globalSettings.projects) {
-                    // TODO: Migration Case
-                    console.log("TODO: Migration from single file to project");
-                    globalSettings.projects = {
-                        activeProject: "",
-                        projects: {}
-                    }
-                    return storageSettings.saveSettings(globalSettings);
-                } else {
-                    activeProject = globalSettings.projects.activeProject;
+    var setupProjectsPromise;
+
+    if (projectsEnabled) {
+        return gitTools.init(_settings, _runtime).then(function(gitVersion) {
+            if (!gitVersion) {
+                projectLogMessages.push(log._("storage.localfilesystem.projects.git-not-found"))
+                projectsEnabled = false;
+            } else {
+                Projects.init(settings,runtime);
+                projectsDir = fspath.join(settings.userDir,"projects");
+                if (!settings.readOnly) {
+                    return fs.ensureDir(projectsDir)
+                    //TODO: this is accessing settings from storage directly as settings
+                    //      has not yet been initialised. That isn't ideal - can this be deferred?
+                    .then(storageSettings.getSettings)
+                    .then(function(globalSettings) {
+                        var saveSettings = false;
+                        if (!globalSettings.projects) {
+                            globalSettings.projects = {
+                                projects: {}
+                            }
+                            saveSettings = true;
+                        } else {
+                            activeProject = globalSettings.projects.activeProject;
+                        }
+                        if (!activeProject) {
+                            projectLogMessages.push(log._("storage.localfilesystem.no-active-project"))
+                        }
+                        if (saveSettings) {
+                            return storageSettings.saveSettings(globalSettings);
+                        }
+                    });
                 }
-            });
-    } else {
-        return when.resolve();
+            }
+        });
     }
+    return Promise.resolve();
+}
+
+function getUserGitSettings(user) {
+    var userSettings = settings.getUserSettings(user)||{};
+    return userSettings.git;
 }
 
 function getBackupFilename(filename) {
@@ -113,10 +141,26 @@ function loadProject(name) {
     })
 }
 
-function getProject(name) {
+function listProjects(user) {
+    return Projects.list();
+}
+
+function getProject(user, name) {
     checkActiveProject(name);
     //return when.resolve(activeProject.info);
-    return Projects.get(name);
+    var username;
+    if (!user) {
+        username = "_";
+    } else {
+        username = user.username;
+    }
+    return Projects.get(name).then(function(project) {
+        return project.toJSON();
+    });
+}
+
+function deleteProject(user, name) {
+    return Projects.delete(user, name);
 }
 
 function checkActiveProject(project) {
@@ -125,110 +169,144 @@ function checkActiveProject(project) {
         throw new Error("Cannot operate on inactive project wanted:"+project+" current:"+(activeProject&&activeProject.name));
     }
 }
-function getFiles(project) {
+function getFiles(user, project) {
     checkActiveProject(project);
     return activeProject.getFiles();
 }
-function stageFile(project,file) {
+function stageFile(user, project,file) {
     checkActiveProject(project);
     return activeProject.stageFile(file);
 }
-function unstageFile(project,file) {
+function unstageFile(user, project,file) {
     checkActiveProject(project);
     return activeProject.unstageFile(file);
 }
-function commit(project,options) {
+function commit(user, project,options) {
     checkActiveProject(project);
-    return activeProject.commit(options);
+    return activeProject.commit(user, options);
 }
-function getFileDiff(project,file,type) {
+function getFileDiff(user, project,file,type) {
     checkActiveProject(project);
     return activeProject.getFileDiff(file,type);
 }
-function getCommits(project,options) {
+function getCommits(user, project,options) {
     checkActiveProject(project);
     return activeProject.getCommits(options);
 }
-function getCommit(project,sha) {
+function getCommit(user, project,sha) {
     checkActiveProject(project);
     return activeProject.getCommit(sha);
 }
 
-function getFile(project,filePath,sha) {
+function getFile(user, project,filePath,sha) {
     checkActiveProject(project);
     return activeProject.getFile(filePath,sha);
 }
-function push(project,remoteBranchName,setRemote) {
+function revertFile(user, project,filePath) {
     checkActiveProject(project);
-    return activeProject.push(remoteBranchName,setRemote);
+    return activeProject.revertFile(filePath).then(function() {
+        return reloadActiveProject("revert");
+    })
 }
-function pull(project,remoteBranchName,setRemote) {
+function push(user, project,remoteBranchName,setRemote) {
     checkActiveProject(project);
-    return activeProject.pull(remoteBranchName,setRemote).then(reloadActiveProject);
+    return activeProject.push(user,remoteBranchName,setRemote);
 }
-function getStatus(project) {
+function pull(user, project,remoteBranchName,setRemote) {
     checkActiveProject(project);
-    return activeProject.status();
+    return activeProject.pull(user,remoteBranchName,setRemote).then(function() {
+        return reloadActiveProject("pull");
+    });
 }
-function resolveMerge(project,file,resolution) {
+function getStatus(user, project) {
+    checkActiveProject(project);
+    return activeProject.status(user);
+}
+function resolveMerge(user, project,file,resolution) {
     checkActiveProject(project);
     return activeProject.resolveMerge(file,resolution);
 }
-function abortMerge(project) {
+function abortMerge(user, project) {
     checkActiveProject(project);
-    return activeProject.abortMerge().then(reloadActiveProject);
+    return activeProject.abortMerge().then(function() {
+        return reloadActiveProject("abort-merge")
+    });
 }
-function getBranches(project,remote) {
+function getBranches(user, project,isRemote) {
     checkActiveProject(project);
-    return activeProject.getBranches(remote);
+    return activeProject.getBranches(user, isRemote);
 }
-function setBranch(project,branchName,isCreate) {
+
+function deleteBranch(user, project, branch, isRemote, force) {
     checkActiveProject(project);
-    return activeProject.setBranch(branchName,isCreate).then(reloadActiveProject);
+    return activeProject.deleteBranch(user, branch, isRemote, force);
 }
-function getBranchStatus(project,branchName) {
+
+function setBranch(user, project,branchName,isCreate) {
+    checkActiveProject(project);
+    return activeProject.setBranch(branchName,isCreate).then(function() {
+        return reloadActiveProject("change-branch");
+    });
+}
+function getBranchStatus(user, project,branchName) {
     checkActiveProject(project);
     return activeProject.getBranchStatus(branchName);
 }
-function getActiveProject() {
+function getActiveProject(user) {
     return activeProject;
 }
 
-function reloadActiveProject() {
+function reloadActiveProject(action) {
     return runtime.nodes.stopFlows().then(function() {
         return runtime.nodes.loadFlows(true).then(function() {
-            runtime.events.emit("runtime-event",{id:"project-change",payload:{ project: activeProject.name}});
+            runtime.events.emit("runtime-event",{id:"project-update", payload:{ project: activeProject.name, action:action}});
         }).catch(function(err) {
             // We're committed to the project change now, so notify editors
             // that it has changed.
-            runtime.events.emit("runtime-event",{id:"project-change",payload:{ project: activeProject.name}});
+            runtime.events.emit("runtime-event",{id:"project-update", payload:{ project: activeProject.name, action:action}});
             throw err;
         });
     });
 }
-function createProject(metadata) {
-    return Projects.create(metadata).then(function(p) {
-        return setActiveProject(p.name);
+function createProject(user, metadata) {
+    // var userSettings = getUserGitSettings(user);
+    if (metadata.files && metadata.files.migrateFiles) {
+        // We expect there to be no active project in this scenario
+        if (activeProject) {
+            throw new Error("Cannot migrate as there is an active project");
+        }
+        var currentEncryptionKey = settings.get('credentialSecret');
+        if (currentEncryptionKey === undefined) {
+            currentEncryptionKey = settings.get('_credentialSecret');
+        }
+        if (!metadata.hasOwnProperty('credentialSecret')) {
+            metadata.credentialSecret = currentEncryptionKey;
+        }
+        metadata.files.flow = flowsFullPath;
+        metadata.files.credentials = credentialsFile;
+        metadata.files.credentialSecret = currentEncryptionKey;
+    }
+    return Projects.create(null,metadata).then(function(p) {
+        return setActiveProject(user, p.name);
     }).then(function() {
-        return getProject(metadata.name);
+        return getProject(user, metadata.name);
     })
 }
-function setActiveProject(projectName) {
+function setActiveProject(user, projectName) {
     return loadProject(projectName).then(function(project) {
         var globalProjectSettings = settings.get("projects");
         globalProjectSettings.activeProject = project.name;
         return settings.set("projects",globalProjectSettings).then(function() {
-            log.info(log._("storage.localfilesystem.changing-project",{project:activeProject||"none"}));
+            log.info(log._("storage.localfilesystem.projects.changing-project",{project:(activeProject&&activeProject.name)||"none"}));
             log.info(log._("storage.localfilesystem.flows-file",{path:flowsFullPath}));
-
             // console.log("Updated file targets to");
             // console.log(flowsFullPath)
             // console.log(credentialsFile)
-            return reloadActiveProject();
+            return reloadActiveProject("loaded");
         })
     });
 }
-function updateProject(project,data) {
+function updateProject(user, project, data) {
     if (!activeProject || activeProject.name !== project) {
         // TODO standardise
         throw new Error("Cannot update inactive project");
@@ -237,14 +315,14 @@ function updateProject(project,data) {
     var isReset = data.resetCredentialSecret;
     var wasInvalid = activeProject.credentialSecretInvalid;
 
-    return activeProject.update(data).then(function(result) {
+    return activeProject.update(user,data).then(function(result) {
 
         if (result.flowFilesChanged) {
             flowsFullPath = activeProject.getFlowFile();
             flowsFileBackup = activeProject.getFlowFileBackup();
             credentialsFile = activeProject.getCredentialsFile();
             credentialsFileBackup = activeProject.getCredentialsFileBackup();
-            return reloadActiveProject();
+            return reloadActiveProject("updated");
         } else if (result.credentialSecretChanged) {
             if (isReset || !wasInvalid) {
                 if (isReset) {
@@ -255,11 +333,11 @@ function updateProject(project,data) {
                     .then(runtime.storage.saveCredentials)
                     .then(function() {
                         if (wasInvalid) {
-                            return reloadActiveProject();
+                            return reloadActiveProject("updated");
                         }
                     });
             } else if (wasInvalid) {
-                return reloadActiveProject();
+                return reloadActiveProject("updated");
             }
         }
     });
@@ -277,11 +355,11 @@ function setCredentialSecret(data) { //existingSecret,secret) {
                 .then(runtime.storage.saveCredentials)
                 .then(function() {
                     if (wasInvalid) {
-                        return reloadActiveProject();
+                        return reloadActiveProject("updated");
                     }
                 });
         } else if (wasInvalid) {
-            return reloadActiveProject();
+            return reloadActiveProject("updated");
         }
     })
 }
@@ -301,11 +379,16 @@ function getFlows() {
         log.info(log._("storage.localfilesystem.user-dir",{path:settings.userDir}));
         if (activeProject) {
             return loadProject(activeProject).then(function() {
-                log.info(log._("storage.localfilesystem.active-project",{project:activeProject.name||"none"}));
+                log.info(log._("storage.localfilesystem.projects.active-project",{project:activeProject.name||"none"}));
                 log.info(log._("storage.localfilesystem.flows-file",{path:flowsFullPath}));
                 return getFlows();
             });
         } else {
+            if (projectsEnabled) {
+                log.warn(log._("storage.localfilesystem.projects.no-active-project"))
+            } else {
+                projectLogMessages.forEach(log.warn);
+            }
             log.info(log._("storage.localfilesystem.flows-file",{path:flowsFullPath}));
         }
     }
@@ -365,14 +448,16 @@ function saveCredentials(credentials) {
 
 module.exports = {
     init: init,
-    listProjects: Projects.list,
+    listProjects: listProjects,
     getActiveProject: getActiveProject,
     setActiveProject: setActiveProject,
     getProject: getProject,
+    deleteProject: deleteProject,
     createProject: createProject,
     updateProject: updateProject,
     getFiles: getFiles,
     getFile: getFile,
+    revertFile: revertFile,
     stageFile: stageFile,
     unstageFile: unstageFile,
     commit: commit,
@@ -385,6 +470,7 @@ module.exports = {
     resolveMerge: resolveMerge,
     abortMerge: abortMerge,
     getBranches: getBranches,
+    deleteBranch: deleteBranch,
     setBranch: setBranch,
     getBranchStatus:getBranchStatus,
 

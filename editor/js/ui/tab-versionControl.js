@@ -39,7 +39,82 @@ RED.sidebar.versionControl = (function() {
 
     var isMerging;
 
-    // TODO: DRY projectSummary.js
+    function viewFileDiff(entry,state) {
+        var activeProject = RED.projects.getActiveProject();
+        var diffTarget = (state === 'staged')?"index":"tree";
+        utils.sendRequest({
+            url: "projects/"+activeProject.name+"/diff/"+diffTarget+"/"+encodeURIComponent(entry.file),
+            type: "GET",
+            responses: {
+                0: function(error) {
+                    console.log(error);
+                    // done(error,null);
+                },
+                200: function(data) {
+                    if (mergeConflictNotification) {
+                        mergeConflictNotification.close();
+                        mergeConflictNotification = null;
+                    }
+                    var title;
+                    if (state === 'unstaged') {
+                        title = 'Unstaged changes : '+entry.file
+                    } else if (state === 'staged') {
+                        title = 'Staged changes : '+entry.file
+                    } else {
+                        title = 'Resolve conflicts : '+entry.file
+                    }
+                    var options = {
+                        diff: data.diff,
+                        title: title,
+                        unmerged: state === 'unmerged',
+                        project: activeProject
+                    }
+                    if (state == 'unstaged') {
+                        options.oldRevTitle = entry.indexStatus === " "?"HEAD":"Staged";
+                        options.newRevTitle = "Unstaged";
+                        options.oldRev = entry.indexStatus === " "?"@":":0";
+                        options.newRev = "_";
+                    } else if (state === 'staged') {
+                        options.oldRevTitle = "HEAD";
+                        options.newRevTitle = "Staged";
+                        options.oldRev = "@";
+                        options.newRev = ":0";
+                    } else {
+                        options.onresolve = function(resolution) {
+                            utils.sendRequest({
+                                url: "projects/"+activeProject.name+"/resolve/"+encodeURIComponent(entry.file),
+                                type: "POST",
+                                responses: {
+                                    0: function(error) {
+                                        console.log(error);
+                                        // done(error,null);
+                                    },
+                                    200: function(data) {
+                                        refresh(true);
+                                    },
+                                    400: {
+                                        'unexpected_error': function(error) {
+                                            console.log(error);
+                                            // done(error,null);
+                                        }
+                                    },
+                                }
+                            },{resolutions:resolution.resolutions[entry.file]});
+                        }
+                    }
+                    options.oncancel = showMergeConflictNotification;
+                    RED.diff.showUnifiedDiff(options);
+                    // console.log(data.diff);
+                },
+                400: {
+                    'unexpected_error': function(error) {
+                        console.log(error);
+                        // done(error,null);
+                    }
+                }
+            }
+        })
+    }
 
     function createChangeEntry(row, entry, status, state) {
         row.addClass("sidebar-version-control-change-entry");
@@ -52,88 +127,67 @@ RED.sidebar.versionControl = (function() {
 
 
         var icon = $('<i class=""></i>').appendTo(container);
-        var label = $('<span>').appendTo(container);
+        var entryLink = $('<a href="#">')
+            .appendTo(container)
+            .click(function(e) {
+                e.preventDefault();
+                viewFileDiff(entry,state);
+            });
+        var label = $('<span>').appendTo(entryLink);
 
-        var bg = $('<div class="button-group"></div>').appendTo(row);
-        var viewDiffButton = $('<button class="editor-button editor-button-small"><i class="fa fa-'+(state==='unmerged'?'columns':'eye')+'"></i></button>')
-            .appendTo(bg)
-            .click(function(evt) {
-                evt.preventDefault();
-                var activeProject = RED.projects.getActiveProject();
-                var diffTarget = (state === 'staged')?"index":"tree";
-                utils.sendRequest({
-                    url: "projects/"+activeProject.name+"/diff/"+diffTarget+"/"+encodeURIComponent(entry.file),
-                    type: "GET",
-                    responses: {
-                        0: function(error) {
-                            console.log(error);
-                            // done(error,null);
-                        },
-                        200: function(data) {
-                            if (mergeConflictNotification) {
-                                mergeConflictNotification.close();
-                                mergeConflictNotification = null;
-                            }
-                            var title;
-                            if (state === 'unstaged') {
-                                title = 'Unstaged changes : '+entry.file
-                            } else if (state === 'staged') {
-                                title = 'Staged changes : '+entry.file
-                            } else {
-                                title = 'Resolve conflicts : '+entry.file
-                            }
-                            var options = {
-                                diff: data.diff,
-                                title: title,
-                                unmerged: state === 'unmerged',
-                                project: activeProject
-                            }
-                            if (state == 'unstaged') {
-                                options.oldRevTitle = entry.indexStatus === " "?"HEAD":"Staged";
-                                options.newRevTitle = "Unstaged";
-                                options.oldRev = entry.indexStatus === " "?"@":":0";
-                                options.newRev = "_";
-                            } else if (state === 'staged') {
-                                options.oldRevTitle = "HEAD";
-                                options.newRevTitle = "Staged";
-                                options.oldRev = "@";
-                                options.newRev = ":0";
-                            } else {
-                                options.onresolve = function(resolution) {
-                                    utils.sendRequest({
-                                        url: "projects/"+activeProject.name+"/resolve/"+encodeURIComponent(entry.file),
-                                        type: "POST",
+        var entryTools = $('<div class="sidebar-version-control-change-entry-tools">').appendTo(row);
+        var bg;
+        var revertButton;
+        if (state === 'unstaged') {
+            bg = $('<span class="button-group" style="margin-right: 5px;"></span>').appendTo(entryTools);
+            revertButton = $('<button class="editor-button editor-button-small"><i class="fa fa-reply"></i></button>')
+                .appendTo(bg)
+                .click(function(evt) {
+                    evt.preventDefault();
+                    var spinner = utils.addSpinnerOverlay(container).addClass('projects-dialog-spinner-contain');
+                    var notification = RED.notify("Are you sure you want to revert the changes to '"+entry.file+"'? This cannot be undone.", {
+                        type: "warning",
+                        modal: true,
+                        fixed: true,
+                        buttons: [
+                            {
+                                text: RED._("common.label.cancel"),
+                                click: function() {
+                                    spinner.remove();
+                                    notification.close();
+                                }
+                            },{
+                                text: 'Revert changes',
+                                click: function() {
+                                    notification.close();
+                                    var activeProject = RED.projects.getActiveProject();
+                                    var url = "projects/"+activeProject.name+"/files/_/"+entry.file;
+                                    var options = {
+                                        url: url,
+                                        type: "DELETE",
                                         responses: {
-                                            0: function(error) {
-                                                console.log(error);
-                                                // done(error,null);
-                                            },
                                             200: function(data) {
-                                                refresh(true);
+                                                spinner.remove();
                                             },
                                             400: {
                                                 'unexpected_error': function(error) {
+                                                    spinner.remove();
                                                     console.log(error);
                                                     // done(error,null);
                                                 }
-                                            },
+                                            }
                                         }
-                                    },{resolutions:resolution.resolutions[entry.file]});
+                                    }
+                                    utils.sendRequest(options);
                                 }
                             }
-                            options.oncancel = showMergeConflictNotification;
-                            RED.diff.showUnifiedDiff(options);
-                            // console.log(data.diff);
-                        },
-                        400: {
-                            'unexpected_error': function(error) {
-                                console.log(error);
-                                // done(error,null);
-                            }
-                        }
-                    }
-                })
-            })
+
+                        ]
+                    })
+
+                });
+        }
+        bg = $('<span class="button-group"></span>').appendTo(entryTools);
         if (state !== 'unmerged') {
             $('<button class="editor-button editor-button-small"><i class="fa fa-'+((state==='unstaged')?"plus":"minus")+'"></i></button>')
                 .appendTo(bg)
@@ -203,11 +257,10 @@ RED.sidebar.versionControl = (function() {
                 delete entry.spinner;
             }
 
-            viewDiffButton.attr("disabled",(status === 'D' || status === '?'));
-            viewDiffButton.find("i")
-                .toggleClass('fa-eye',!(status === 'D' || status === '?'))
-                .toggleClass('fa-eye-slash',(status === 'D' || status === '?'))
-
+            if (revertButton) {
+                revertButton.toggle(status !== '?');
+            }
+            entryLink.toggleClass("disabled",(status === 'D' || status === '?'));
         }
         entry["update"+((state==='unstaged')?"Unstaged":"Staged")](entry, status);
     }
@@ -226,7 +279,7 @@ RED.sidebar.versionControl = (function() {
                 stagedChangesList.editableList('empty');
                 unmergedChangesList.editableList('empty');
 
-                $.getJSON("/projects/"+activeProject.name+"/status",function(result) {
+                $.getJSON("projects/"+activeProject.name+"/status",function(result) {
                     refreshFiles(result);
                 });
             }
@@ -294,7 +347,7 @@ RED.sidebar.versionControl = (function() {
             .click(function(evt) {
                 evt.preventDefault();
                 evt.stopPropagation();
-                var spinner =u(unmergedContent);
+                var spinner = utils.addSpinnerOverlay(unmergedContent);
                 var activeProject = RED.projects.getActiveProject();
                 utils.sendRequest({
                     url: "projects/"+activeProject.name+"/merge",
@@ -471,7 +524,7 @@ RED.sidebar.versionControl = (function() {
                     localCommitListShade.show();
                     $(this).addClass('selected');
                     var activeProject = RED.projects.getActiveProject();
-                    localBranchList.refresh("/projects/"+activeProject.name+"/branches");
+                    localBranchList.refresh("projects/"+activeProject.name+"/branches");
                     localBranchBox.show();
                     setTimeout(function() {
                         localBranchBox.css("height","215px");
@@ -523,7 +576,7 @@ RED.sidebar.versionControl = (function() {
                     row.click(function(e) {
                         var activeProject = RED.projects.getActiveProject();
                         if (activeProject) {
-                            $.getJSON("/projects/"+activeProject.name+"/commits/"+entry.sha,function(result) {
+                            $.getJSON("projects/"+activeProject.name+"/commits/"+entry.sha,function(result) {
                                 result.project = activeProject;
                                 result.parents = entry.parents;
                                 result.oldRev = entry.sha+"~1";
@@ -571,9 +624,6 @@ RED.sidebar.versionControl = (function() {
         $('<div class="sidebar-version-control-slide-box-header"></div>').text("Change local branch").appendTo(localBranchBox);
 
         var localBranchList = utils.createBranchList({
-            current: function() {
-                return  RED.projects.getActiveProject().branches.local
-            },
             placeholder: "Find or create a branch",
             container: localBranchBox,
             onselect: function(body) {
@@ -582,9 +632,14 @@ RED.sidebar.versionControl = (function() {
                 }
                 var spinner = utils.addSpinnerOverlay(localBranchBox);
                 var activeProject = RED.projects.getActiveProject();
+                RED.deploy.setDeployInflight(true);
                 utils.sendRequest({
                     url: "projects/"+activeProject.name+"/branches",
                     type: "POST",
+                    requireCleanWorkspace: true,
+                    cancel: function() {
+                        spinner.remove();
+                    },
                     responses: {
                         0: function(error) {
                             spinner.remove();
@@ -599,6 +654,13 @@ RED.sidebar.versionControl = (function() {
                             });
                         },
                         400: {
+                            'git_local_overwrite': function(error) {
+                                spinner.remove();
+                                RED.notify("You have local changes that would be overwritten by changing the branch. You must either commit or undo those changes first.",{
+                                    type:'error',
+                                    timeout: 8000
+                                });
+                            },
                             'unexpected_error': function(error) {
                                 spinner.remove();
                                 console.log(error);
@@ -606,7 +668,9 @@ RED.sidebar.versionControl = (function() {
                             }
                         },
                     }
-                },body);
+                },body).always(function(){
+                    RED.deploy.setDeployInflight(false);
+                });
             }
         });
 
@@ -645,7 +709,7 @@ RED.sidebar.versionControl = (function() {
                 } else {
                     $(this).addClass('selected');
                     var activeProject = RED.projects.getActiveProject();
-                    remoteBranchList.refresh("/projects/"+activeProject.name+"/branches/remote");
+                    remoteBranchList.refresh("projects/"+activeProject.name+"/branches/remote");
                     remoteBranchSubRow.show();
                     setTimeout(function() {
                         remoteBranchSubRow.height(180);
@@ -668,7 +732,7 @@ RED.sidebar.versionControl = (function() {
                 var activeProject = RED.projects.getActiveProject();
                 var spinner = utils.addSpinnerOverlay(remoteBox).addClass("projects-dialog-spinner-contain");
                 utils.sendRequest({
-                    url: "/projects/"+activeProject.name+"/branches/remote",
+                    url: "projects/"+activeProject.name+"/branches/remote",
                     type: "GET",
                     responses: {
                         0: function(error) {
@@ -679,6 +743,9 @@ RED.sidebar.versionControl = (function() {
                             refresh(true);
                         },
                         400: {
+                            'git_connection_failed': function(error) {
+                                RED.notify(error.message);
+                            },
                             'unexpected_error': function(error) {
                                 console.log(error);
                                 // done(error,null);
@@ -694,14 +761,11 @@ RED.sidebar.versionControl = (function() {
 
         var remoteBranchSubRow = $('<div style="height: 0;overflow:hidden; transition: height 0.2s ease-in-out;"></div>').hide().appendTo(remoteBranchRow);
         var remoteBranchList = utils.createBranchList({
-            current: function() {
-                return  RED.projects.getActiveProject().branches.remote
-            },
             placeholder: "Find or create a remote branch",
             currentLabel: "upstream",
             remote: function() {
                 var project = RED.projects.getActiveProject();
-                var remotes = Object.keys(project.remotes);
+                var remotes = Object.keys(project.git.remotes);
                 return remotes[0];
             },
             container: remoteBranchSubRow,
@@ -710,12 +774,12 @@ RED.sidebar.versionControl = (function() {
                 $("#sidebar-version-control-repo-toolbar-set-upstream").prop('disabled',false);
                 $("#sidebar-version-control-remote-branch").text(body.name+(body.create?" *":""));
                 var activeProject = RED.projects.getActiveProject();
-                if (activeProject.branches.remote === body.name) {
-                    delete activeProject.branches.remoteAlt;
+                if (activeProject.git.branches.remote === body.name) {
+                    delete activeProject.git.branches.remoteAlt;
                 } else {
-                    activeProject.branches.remoteAlt = body.name;
+                    activeProject.git.branches.remoteAlt = body.name;
                 }
-                $("#sidebar-version-control-repo-toolbar-set-upstream-row").toggle(!!activeProject.branches.remoteAlt);
+                $("#sidebar-version-control-repo-toolbar-set-upstream-row").toggle(!!activeProject.git.branches.remoteAlt);
                 closeRemoteBranchBox(function() {
                     if (!body.create) {
                         var start = Date.now();
@@ -727,7 +791,7 @@ RED.sidebar.versionControl = (function() {
                             },Math.max(400-(Date.now() - start),0));
                         })
                     } else {
-                        if (!activeProject.branches.remote) {
+                        if (!activeProject.git.branches.remote) {
                             $('#sidebar-version-control-repo-toolbar-message').text("The created branch will be set as the tracked upstream branch.");
                             $("#sidebar-version-control-repo-toolbar-set-upstream").prop('checked',true);
                             $("#sidebar-version-control-repo-toolbar-set-upstream").prop('disabled',true);
@@ -751,8 +815,8 @@ RED.sidebar.versionControl = (function() {
                 var spinner = utils.addSpinnerOverlay(remoteBox).addClass("projects-dialog-spinner-contain");
                 var activeProject = RED.projects.getActiveProject();
                 var url = "projects/"+activeProject.name+"/push";
-                if (activeProject.branches.remoteAlt) {
-                    url+="/"+activeProject.branches.remoteAlt;
+                if (activeProject.git.branches.remoteAlt) {
+                    url+="/"+activeProject.git.branches.remoteAlt;
                 }
                 if ($("#sidebar-version-control-repo-toolbar-set-upstream").prop('checked')) {
                     url+="?u=true"
@@ -792,8 +856,8 @@ RED.sidebar.versionControl = (function() {
                 var spinner = utils.addSpinnerOverlay(remoteBox).addClass("projects-dialog-spinner-contain");
                 var activeProject = RED.projects.getActiveProject();
                 var url = "projects/"+activeProject.name+"/pull";
-                if (activeProject.branches.remoteAlt) {
-                    url+="/"+activeProject.branches.remoteAlt;
+                if (activeProject.git.branches.remoteAlt) {
+                    url+="/"+activeProject.git.branches.remoteAlt;
                 }
                 if ($("#sidebar-version-control-repo-toolbar-set-upstream").prop('checked')) {
                     url+="?u=true"
@@ -812,7 +876,7 @@ RED.sidebar.versionControl = (function() {
                             closeRemoteBox();
                         },
                         400: {
-                            'git_pull_overwrite': function(err) {
+                            'git_local_overwrite': function(err) {
                                 RED.notify("Unable to pull remote changes; your unstaged local changes would be overwritten. Commit your changes and try again."+
                                     '<p><a href="#" onclick="RED.sidebar.versionControl.showLocalChanges(); return false;">'+'Show unstaged changes'+'</a></p>',"error",false,10000000);
                             },
@@ -833,6 +897,7 @@ RED.sidebar.versionControl = (function() {
                 });
             });
 
+        $('<div class="component-shade sidebar-version-control-shade">').appendTo(sidebarContent);
 
         RED.sidebar.addTab({
             id: "version-control",
@@ -954,7 +1019,7 @@ RED.sidebar.versionControl = (function() {
         localCommitList.editableList('empty');
         var activeProject = RED.projects.getActiveProject();
         if (activeProject) {
-            getCommits("/projects/"+activeProject.name+"/commits",localCommitList,localCommitList.parent());
+            getCommits("projects/"+activeProject.name+"/commits",localCommitList,localCommitList.parent());
         }
     }
     // function refreshRemoteCommits() {
@@ -962,7 +1027,7 @@ RED.sidebar.versionControl = (function() {
     //     var spinner = utils.addSpinnerOverlay(remoteCommitList);
     //     var activeProject = RED.projects.getActiveProject();
     //     if (activeProject) {
-    //         getCommits("/projects/"+activeProject.name+"/commits/origin",remoteCommitList,remoteCommitList.parent());
+    //         getCommits("projects/"+activeProject.name+"/commits/origin",remoteCommitList,remoteCommitList.parent());
     //     }
     // }
 
@@ -1116,7 +1181,7 @@ RED.sidebar.versionControl = (function() {
 
         var activeProject = RED.projects.getActiveProject();
         if (activeProject) {
-            $.getJSON("/projects/"+activeProject.name+"/status",function(result) {
+            $.getJSON("projects/"+activeProject.name+"/status",function(result) {
                 refreshFiles(result);
 
                 $('#sidebar-version-control-local-branch').text(result.branches.local);
@@ -1125,7 +1190,7 @@ RED.sidebar.versionControl = (function() {
                 var commitsAhead = result.commits.ahead || 0;
                 var commitsBehind = result.commits.behind || 0;
 
-                if (activeProject.hasOwnProperty('remotes')) {
+                if (activeProject.git.hasOwnProperty('remotes')) {
                     if (result.branches.hasOwnProperty("remoteError")) {
                         $("#sidebar-version-control-repo-status-auth-issue").show();
                         $("#sidebar-version-control-repo-status-stats").hide();
@@ -1159,8 +1224,10 @@ RED.sidebar.versionControl = (function() {
                     $("#sidebar-version-control-repo-status-button").hide();
                 }
                 refreshInProgress = false;
+                $('.sidebar-version-control-shade').hide();
             });
         } else {
+            $('.sidebar-version-control-shade').show();
             unstagedChangesList.editableList('empty');
             stagedChangesList.editableList('empty');
             unmergedChangesList.editableList('empty');

@@ -22,20 +22,8 @@ var clone = require('clone');
 var path = require("path");
 
 var gitCommand = "git";
+var gitVersion;
 var log;
-
-// function execCommand(command,args,cwd) {
-//     return when.promise(function(resolve,reject) {
-//         var fullCommand = command+" "+args.join(" ");
-//         child = exec(fullCommand, {cwd: cwd, timeout:3000, killSignal: 'SIGTERM'}, function (error, stdout, stderr) {
-//             if (error) {
-//                 reject(error);
-//             } else {
-//                 resolve(stdout);
-//             }
-//         });
-//     });
-// }
 
 function runGitCommand(args,cwd,env) {
     log.trace(gitCommand + JSON.stringify(args));
@@ -64,8 +52,12 @@ function runGitCommand(args,cwd,env) {
                     err.code = "git_auth_failed";
                 } else if(/Connection refused/.test(stderr)) {
                     err.code = "git_connection_failed";
-                } else {
-                    err.code = "git_error";
+                } else if (/commit your changes or stash/.test(stderr)) {
+                    err.code = "git_local_overwrite";
+                } else if (/CONFLICT/.test(err.stdout)) {
+                    err.code = "git_pull_merge_conflict";
+                } else if (/not fully merged/.test(stderr)) {
+                    err.code = "git_delete_branch_unmerged";
                 }
                 return reject(err);
             }
@@ -280,17 +272,37 @@ function getRemotes(cwd) {
 }
 
 function getBranches(cwd, remote) {
-    var args = ['branch','--no-color'];
+    var args = ['branch','-vv','--no-color'];
     if (remote) {
         args.push('-r');
     }
+    var branchRE = /^([ \*] )(\S+) +(\S+)(?: \[(\S+?)(?:: (?:ahead (\d+)(?:, )?)?(?:behind (\d+))?)?\])? (.*)$/;
     return runGitCommand(args,cwd).then(function(output) {
         var branches = [];
         var lines = output.split("\n");
-        branches = lines.map(function(l) { return l.substring(2)})
-                        .filter(function(l) {
-                            return !/HEAD ->/.test(l) && (l.length > 0)
-                        });
+        branches = lines.map(function(l) {
+            var m = branchRE.exec(l);
+            var branch = null;
+            if (m) {
+                branch = {
+                    name: m[2],
+                    remote: m[4],
+                    status: {
+                        ahead: m[5]||0,
+                        behind: m[6]||0,
+                    },
+                    commit: {
+                        sha: m[3],
+                        subject: m[7]
+                    }
+                }
+                if (m[1] === '* ') {
+                    branch.current = true;
+                }
+            }
+            return branch;
+        }).filter(function(v) { return !!v && v.commit.sha !== '->' });
+
         return {branches:branches};
     })
 }
@@ -311,9 +323,27 @@ function getBranchStatus(cwd,remoteBranch) {
     })
 }
 
+function addRemote(cwd,name,options) {
+    var args = ["remote","add",name,options.url]
+    return runGitCommand(args,cwd);
+}
+function removeRemote(cwd,name) {
+    var args = ["remote","remove",name];
+    return runGitCommand(args,cwd);
+}
+
 module.exports = {
     init: function(_settings,_runtime) {
         log = _runtime.log
+        return new Promise(function(resolve,reject) {
+            runGitCommand(["--version"]).then(function(output) {
+                var m = / (\d\S+)/.exec(output);
+                gitVersion = m[1];
+                resolve(gitVersion);
+            }).catch(function(err) {
+                resolve(null);
+            });
+        });
     },
     initRepo: function(cwd) {
         return runGitCommand(["init"],cwd);
@@ -322,12 +352,11 @@ module.exports = {
         var args = ["branch","--set-upstream-to",remoteBranch];
         return runGitCommand(args,cwd);
     },
-    pull: function(cwd,remoteBranch,auth) {
+    pull: function(cwd,remote,branch,auth) {
         var args = ["pull"];
-        var m = /^(.*?)\/(.*)$/.exec(remoteBranch);
-        if (m) {
-            args.push(m[1]);
-            args.push(m[2])
+        if (remote && branch) {
+            args.push(remote);
+            args.push(branch);
         }
         var promise;
         if (auth) {
@@ -348,17 +377,16 @@ module.exports = {
             throw err;
         });
     },
-    push: function(cwd,remoteBranch,setUpstream, auth) {
+    push: function(cwd,remote,branch,setUpstream, auth) {
         var args = ["push"];
-        var m = /^(.*?)\/(.*)$/.exec(remoteBranch);
-        if (m) {
+        if (branch) {
             if (setUpstream) {
                 args.push("-u");
             }
-            args.push(m[1]);
-            args.push("HEAD:"+m[2]);
+            args.push(remote);
+            args.push("HEAD:"+branch);
         } else {
-            args.push("origin");
+            args.push(remote);
         }
         args.push("--porcelain");
         var promise;
@@ -403,6 +431,10 @@ module.exports = {
             return status.files;
         })
     },
+    revertFile: function(cwd, filePath) {
+        var args = ["checkout",filePath];
+        return runGitCommand(args,cwd);
+    },
     stageFile: function(cwd,file) {
         var args = ["add"];
         if (Array.isArray(file)) {
@@ -419,9 +451,16 @@ module.exports = {
         }
         return runGitCommand(args,cwd);
     },
-    commit: function(cwd, message) {
+    commit: function(cwd, message, gitUser) {
         var args = ["commit","-m",message];
-        return runGitCommand(args,cwd);
+        var env;
+        if (gitUser && gitUser['name'] && gitUser['email']) {
+            args.unshift('user.name="'+gitUser['name']+'"');
+            args.unshift('-c');
+            args.unshift('user.email="'+gitUser['email']+'"');
+            args.unshift('-c');
+        }
+        return runGitCommand(args,cwd,env);
     },
     getFileDiff(cwd,file,type) {
         var args = ["diff"];
@@ -433,8 +472,8 @@ module.exports = {
         args.push(file);
         return runGitCommand(args,cwd);
     },
-    fetch: function(cwd,auth) {
-        var args = ["fetch"];
+    fetch: function(cwd,remote,auth) {
+        var args = ["fetch",remote];
         if (auth) {
             return runGitCommandWithAuth(args,cwd,auth);
         } else {
@@ -474,6 +513,14 @@ module.exports = {
         return runGitCommand(['merge','--abort'],cwd);
     },
     getRemotes: getRemotes,
+    getRemoteBranch: function(cwd) {
+        return runGitCommand(['rev-parse','--abbrev-ref','--symbolic-full-name','@{u}'],cwd).catch(function(err) {
+            if (/no upstream configured for branch/.test(err.message)) {
+                return null;
+            }
+            throw err;
+        })
+    },
     getBranches: getBranches,
     getBranchInfo: getBranchInfo,
     checkoutBranch: function(cwd, branchName, isCreate) {
@@ -484,5 +531,20 @@ module.exports = {
         args.push(branchName);
         return runGitCommand(args,cwd);
     },
-    getBranchStatus: getBranchStatus
+    deleteBranch: function(cwd, branchName, isRemote, force) {
+        if (isRemote) {
+            throw new Error("Deleting remote branches not supported");
+        }
+        var args = ['branch'];
+        if (force) {
+            args.push('-D');
+        } else {
+            args.push('-d');
+        }
+        args.push(branchName);
+        return runGitCommand(args, cwd);
+    },
+    getBranchStatus: getBranchStatus,
+    addRemote: addRemote,
+    removeRemote: removeRemote
 }
