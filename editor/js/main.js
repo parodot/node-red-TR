@@ -24,7 +24,25 @@
             url: 'nodes',
             success: function(data) {
                 RED.nodes.setNodeList(data);
-                RED.i18n.loadNodeCatalogs(loadNodes);
+                RED.i18n.loadNodeCatalogs(function() {
+                    loadIconList(loadNodes);
+                });
+            }
+        });
+    }
+
+    function loadIconList(done) {
+        $.ajax({
+            headers: {
+                "Accept":"application/json"
+            },
+            cache: false,
+            url: 'icons',
+            success: function(data) {
+                RED.nodes.setIconSets(data);
+                if (done) {
+                    done();
+                }
             }
         });
     }
@@ -95,21 +113,64 @@
                             });
                             return;
                         }
+
                         if (msg.text) {
                             var text = RED._(msg.text,{default:msg.text});
+                            var options = {
+                                type: msg.type,
+                                fixed: msg.timeout === undefined,
+                                timeout: msg.timeout
+                            }
                             if (notificationId === "runtime-state") {
                                 if (msg.error === "credentials_load_failed") {
-                                    // TODO: NLS
-                                    text += '<p><a href="#" onclick="RED.projects.showCredentialsPrompt(); return false;">'+'Setup credentials'+'</a></p>';
+                                    if (RED.user.hasPermission("projects.write")) {
+                                        options.buttons = [
+                                            {
+                                                text: "Setup credentials",
+                                                click: function() {
+                                                    RED.projects.showCredentialsPrompt();
+                                                }
+                                            }
+                                        ]
+                                    }
                                 } else if (msg.error === "missing_flow_file") {
-                                    // TODO: NLS
-                                    text += '<p><a href="#" onclick="RED.projects.showFilesPrompt(); return false;">'+'Setup project files'+'</a></p>';
+                                    if (RED.user.hasPermission("projects.write")) {
+                                        options.buttons = [
+                                            {
+                                                text: "Setup project files",
+                                                click: function() {
+                                                    persistentNotifications[notificationId].close();
+                                                    delete persistentNotifications[notificationId];
+                                                    RED.projects.showFilesPrompt();
+                                                }
+                                            }
+                                        ]
+                                    }
+                                } else if (msg.error === "project_empty") {
+                                    if (RED.user.hasPermission("projects.write")) {
+                                        options.buttons = [
+                                            {
+                                                text: "No thanks",
+                                                click: function() {
+                                                    persistentNotifications[notificationId].close();
+                                                    delete persistentNotifications[notificationId];
+                                                }
+                                            },                                        {
+                                                text: "Create default project files",
+                                                click: function() {
+                                                    persistentNotifications[notificationId].close();
+                                                    delete persistentNotifications[notificationId];
+                                                    RED.projects.createDefaultFileSet();
+                                                }
+                                            }
+                                        ]
+                                    }
                                 }
                             }
                             if (!persistentNotifications.hasOwnProperty(notificationId)) {
-                                persistentNotifications[notificationId] = RED.notify(text,msg.type,msg.timeout === undefined,msg.timeout);
+                                persistentNotifications[notificationId] = RED.notify(text,options);
                             } else {
-                                persistentNotifications[notificationId].update(text,msg.timeout);
+                                persistentNotifications[notificationId].update(text,options);
                             }
                         } else if (persistentNotifications.hasOwnProperty(notificationId)) {
                             persistentNotifications[notificationId].close();
@@ -150,6 +211,7 @@
                                 typeList = "<ul><li>"+addedTypes.join("</li><li>")+"</li></ul>";
                                 RED.notify(RED._("palette.event.nodeAdded", {count:addedTypes.length})+typeList,"success");
                             }
+                            loadIconList();
                         } else if (topic == "notification/node/removed") {
                             for (i=0;i<msg.length;i++) {
                                 m = msg[i];
@@ -159,6 +221,7 @@
                                     RED.notify(RED._("palette.event.nodeRemoved", {count:m.types.length})+typeList,"success");
                                 }
                             }
+                            loadIconList();
                         } else if (topic == "notification/node/enabled") {
                             if (msg.types) {
                                 info = RED.nodes.getNodeSet(msg.id);

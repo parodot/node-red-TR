@@ -76,7 +76,12 @@
         "password": "Password",
         "login": "Login",
         "loginFailed": "Login failed",
-        "notAuthorized": "Not authorized"
+        "notAuthorized": "Not authorized",
+        "errors": {
+            "settings": "You must be logged in to access settings",
+            "deploy": "You must be logged in to deploy changes",
+            "notAuthorized": "You must be logged in to perform this action"
+        }
     },
     "notification": {
         "warning": "<strong>Warning</strong>: __message__",
@@ -85,8 +90,9 @@
             "nodeActionDisabled": "node actions disabled within subflow",
             "missing-types": "Flows stopped due to missing node types. Check logs for details.",
             "restartRequired": "Node-RED must be restarted to enable upgraded modules",
-            "credentials_load_failed": "Flows stopped due to missing or invalid credentialSecret",
-            "missing_flow_file": "Could not find the project flow file"
+            "credentials_load_failed": "<p>Flows stopped due to missing or invalid credentialSecret.</p>",
+            "missing_flow_file": "<p>Project flow file not found.</p><p>The project is not configured with a flow file.</p>",
+            "project_empty": "<p>The project is empty.</p><p>Do you want to create a default set of project files?<br/>Otherwise, you will have to manually add files to the project outside of the editor.</p>"
         },
 
         "error": "<strong>Error</strong>: __message__",
@@ -212,9 +218,10 @@
         "editConfig": "Edit __type__ config node",
         "addNewType": "Add new __type__...",
         "nodeProperties": "node properties",
-        "portLabels": "port labels",
+        "portLabels": "node settings",
         "labelInputs": "Inputs",
         "labelOutputs": "Outputs",
+        "settingIcon": "Icon",
         "noDefaultLabel": "none",
         "defaultLabel": "use default label",
         "errors": {
@@ -444,8 +451,10 @@
     },
     "expressionEditor": {
         "functions": "Functions",
+        "functionReference": "Function reference",
         "insert": "Insert",
         "title": "JSONata Expression editor",
+        "test": "Test",
         "data": "Example message",
         "result": "Result",
         "format": "format expression",

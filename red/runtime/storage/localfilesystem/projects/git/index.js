@@ -18,6 +18,7 @@ var when = require('when');
 var exec = require('child_process').exec;
 var spawn = require('child_process').spawn;
 var authResponseServer = require('./authServer').ResponseServer;
+var sshResponseServer = require('./authServer').ResponseSSHServer;
 var clone = require('clone');
 var path = require("path");
 
@@ -50,6 +51,8 @@ function runGitCommand(args,cwd,env) {
                     err.code = "git_auth_failed";
                 } else if(/HTTP Basic: Access denied/.test(stderr)) {
                     err.code = "git_auth_failed";
+                } else if(/Permission denied \(publickey\)/.test(stderr)) {
+                    err.code = "git_auth_failed";
                 } else if(/Connection refused/.test(stderr)) {
                     err.code = "git_connection_failed";
                 } else if (/commit your changes or stash/.test(stderr)) {
@@ -58,6 +61,8 @@ function runGitCommand(args,cwd,env) {
                     err.code = "git_pull_merge_conflict";
                 } else if (/not fully merged/.test(stderr)) {
                     err.code = "git_delete_branch_unmerged";
+                } else if (/remote .* already exists/.test(stderr)) {
+                    err.code = "git_remote_already_exists";
                 }
                 return reject(err);
             }
@@ -72,6 +77,22 @@ function runGitCommandWithAuth(args,cwd,auth) {
         commandEnv.NODE_RED_GIT_NODE_PATH = process.execPath;
         commandEnv.NODE_RED_GIT_SOCK_PATH = rs.path;
         commandEnv.NODE_RED_GIT_ASKPASS_PATH = path.join(__dirname,"authWriter.js");
+        return runGitCommand(args,cwd,commandEnv).finally(function() {
+            rs.close();
+        });
+    })
+}
+
+function runGitCommandWithSSHCommand(args,cwd,auth) {
+    return sshResponseServer(auth).then(function(rs) {
+        var commandEnv = clone(process.env);
+        commandEnv.SSH_ASKPASS = path.join(__dirname,"node-red-ask-pass.sh");
+        commandEnv.DISPLAY = "dummy:0";
+        commandEnv.NODE_RED_GIT_NODE_PATH = process.execPath;
+        commandEnv.NODE_RED_GIT_SOCK_PATH = rs.path;
+        commandEnv.NODE_RED_GIT_ASKPASS_PATH = path.join(__dirname,"authWriter.js");
+        commandEnv.GIT_SSH_COMMAND = "ssh -i " + auth.key_path + " -F /dev/null";
+        // console.log('commandEnv:', commandEnv);
         return runGitCommand(args,cwd,commandEnv).finally(function() {
             rs.close();
         });
@@ -96,28 +117,28 @@ function parseFilenames(name) {
     }
     return result;
 }
-function getBranchInfo(localRepo) {
-    return runGitCommand(["status","--porcelain","-b"],localRepo).then(function(output) {
-        var lines = output.split("\n");
-        var unknownDirs = [];
-        var branchLineRE = /^## (.+?)($|\.\.\.(.+?)($| \[(ahead (\d+))?.*?(behind (\d+))?\]))/m;
-        var m = branchLineRE.exec(output);
-        var result = {}; //commits:{}};
-        if (m) {
-            result.local = m[1];
-            if (m[3]) {
-                result.remote = m[3];
-            }
-            // if (m[6] !== undefined) {
-            //     result.commits.ahead = parseInt(m[6]);
-            // }
-            // if (m[8] !== undefined) {
-            //     result.commits.behind = parseInt(m[8]);
-            // }
-        }
-        return result;
-    });
-}
+// function getBranchInfo(localRepo) {
+//     return runGitCommand(["status","--porcelain","-b"],localRepo).then(function(output) {
+//         var lines = output.split("\n");
+//         var unknownDirs = [];
+//         var branchLineRE = /^## (No commits yet on )?(.+?)($|\.\.\.(.+?)($| \[(ahead (\d+))?.*?(behind (\d+))?\]))/m;
+//         console.log(output);
+//         console.log(lines);
+//         var m = branchLineRE.exec(output);
+//         console.log(m);
+//         var result = {}; //commits:{}};
+//         if (m) {
+//             if (m[1]) {
+//                 result.empty = true;
+//             }
+//             result.local = m[2];
+//             if (m[4]) {
+//                 result.remote = m[4];
+//             }
+//         }
+//         return result;
+//     });
+// }
 function getStatus(localRepo) {
     // parseFilename('"test with space"');
     // parseFilename('"test with space" -> knownFile.txt');
@@ -129,6 +150,12 @@ function getStatus(localRepo) {
     }
     return runGitCommand(['rev-list', 'HEAD', '--count'],localRepo).then(function(count) {
         result.commits.total = parseInt(count);
+    }).catch(function(err) {
+        if (/ambiguous argument/.test(err.message)) {
+            result.commits.total = 0;
+        } else {
+            throw err;
+        }
     }).then(function() {
         return runGitCommand(["ls-files","--cached","--others","--exclude-standard"],localRepo).then(function(output) {
             var lines = output.split("\n");
@@ -156,7 +183,7 @@ function getStatus(localRepo) {
             return runGitCommand(["status","--porcelain","-b"],localRepo).then(function(output) {
                 var lines = output.split("\n");
                 var unknownDirs = [];
-                var branchLineRE = /^## (.+?)($|\.\.\.(.+?)($| \[(ahead (\d+))?.*?(behind (\d+))?\]))/;
+                var branchLineRE = /^## (?:No commits yet on )?(.+?)(?:$|\.\.\.(.+?)(?:$| \[(?:(?:ahead (\d+)(?:,\s*)?)?(?:behind (\d+))?|(gone))\]))/;
                 lines.forEach(function(line) {
                     if (line==="") {
                         return;
@@ -165,16 +192,22 @@ function getStatus(localRepo) {
                         var m = branchLineRE.exec(line);
                         if (m) {
                             result.branches.local = m[1];
-                            if (m[3]) {
-                                result.branches.remote = m[3];
+                            if (m[2]) {
+                                result.branches.remote = m[2];
                                 result.commits.ahead = 0;
                                 result.commits.behind = 0;
                             }
-                            if (m[6] !== undefined) {
-                                result.commits.ahead = parseInt(m[6]);
+                            if (m[3] !== undefined) {
+                                result.commits.ahead = parseInt(m[3]);
                             }
-                            if (m[8] !== undefined) {
-                                result.commits.behind = parseInt(m[8]);
+                            if (m[4] !== undefined) {
+                                result.commits.behind = parseInt(m[4]);
+                            }
+                            if (m[5] !== undefined) {
+                                result.commits.ahead = result.commits.total;
+                                result.branches.remoteError = {
+                                    code: "git_remote_gone"
+                                }
                             }
                         }
                         return;
@@ -360,7 +393,12 @@ module.exports = {
         }
         var promise;
         if (auth) {
-            promise = runGitCommandWithAuth(args,cwd,auth);
+            if ( auth.key_path ) {
+                promise = runGitCommandWithSSHCommand(args,cwd,auth);
+            }
+            else {
+                promise = runGitCommandWithAuth(args,cwd,auth);
+            }
         } else {
             promise = runGitCommand(args,cwd)
         }
@@ -391,7 +429,12 @@ module.exports = {
         args.push("--porcelain");
         var promise;
         if (auth) {
-            promise = runGitCommandWithAuth(args,cwd,auth);
+            if ( auth.key_path ) {
+                promise = runGitCommandWithSSHCommand(args,cwd,auth);
+            }
+            else {
+                promise = runGitCommandWithAuth(args,cwd,auth);
+            }
         } else {
             promise = runGitCommand(args,cwd)
         }
@@ -400,6 +443,8 @@ module.exports = {
                 if (/^!.*non-fast-forward/m.test(err.stdout)) {
                     err.code = 'git_push_failed';
                 }
+                throw err;
+            } else {
                 throw err;
             }
         });
@@ -416,7 +461,12 @@ module.exports = {
         }
         args.push(".");
         if (auth) {
-            return runGitCommandWithAuth(args,cwd,auth);
+            if ( auth.key_path ) {
+                return runGitCommandWithSSHCommand(args,cwd,auth);
+            }
+            else {
+                return runGitCommandWithAuth(args,cwd,auth);
+            }
         } else {
             return runGitCommand(args,cwd);
         }
@@ -475,7 +525,12 @@ module.exports = {
     fetch: function(cwd,remote,auth) {
         var args = ["fetch",remote];
         if (auth) {
-            return runGitCommandWithAuth(args,cwd,auth);
+            if ( auth.key_path ) {
+                return runGitCommandWithSSHCommand(args,cwd,auth);
+            }
+            else {
+                return runGitCommandWithAuth(args,cwd,auth);
+            }
         } else {
             return runGitCommand(args,cwd);
         }
@@ -522,7 +577,7 @@ module.exports = {
         })
     },
     getBranches: getBranches,
-    getBranchInfo: getBranchInfo,
+    // getBranchInfo: getBranchInfo,
     checkoutBranch: function(cwd, branchName, isCreate) {
         var args = ['checkout'];
         if (isCreate) {

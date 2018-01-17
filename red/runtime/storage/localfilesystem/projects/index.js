@@ -23,11 +23,13 @@ var crypto = require('crypto');
 var storageSettings = require("../settings");
 var util = require("../util");
 var gitTools = require("./git");
+var sshTools = require("./ssh");
 
 var Projects = require("./Project");
 
 var settings;
 var runtime;
+var log;
 
 var projectsEnabled = true;
 var projectLogMessages = [];
@@ -89,6 +91,7 @@ function init(_settings, _runtime) {
                 projectsEnabled = false;
             } else {
                 Projects.init(settings,runtime);
+                sshTools.init(settings,runtime);
                 projectsDir = fspath.join(settings.userDir,"projects");
                 if (!settings.readOnly) {
                     return fs.ensureDir(projectsDir)
@@ -104,6 +107,13 @@ function init(_settings, _runtime) {
                             saveSettings = true;
                         } else {
                             activeProject = globalSettings.projects.activeProject;
+                        }
+                        if (settings.flowFile) {
+                            if (globalSettings.projects.projects.hasOwnProperty(settings.flowFile)) {
+                                activeProject = settings.flowFile;
+                                globalSettings.projects.activeProject = settings.flowFile;
+                                saveSettings = true;
+                            }
                         }
                         if (!activeProject) {
                             projectLogMessages.push(log._("storage.localfilesystem.no-active-project"))
@@ -252,6 +262,25 @@ function getBranchStatus(user, project,branchName) {
     checkActiveProject(project);
     return activeProject.getBranchStatus(branchName);
 }
+
+
+function getRemotes(user, project) {
+    checkActiveProject(project);
+    return activeProject.getRemotes(user);
+}
+function addRemote(user, project, options) {
+    checkActiveProject(project);
+    return activeProject.addRemote(user, options.name, options);
+}
+function removeRemote(user, project, remote) {
+    checkActiveProject(project);
+    return activeProject.removeRemote(user, remote);
+}
+function updateRemote(user, project, remote, body) {
+    checkActiveProject(project);
+    return activeProject.updateRemote(user, remote, body);
+}
+
 function getActiveProject(user) {
     return activeProject;
 }
@@ -282,8 +311,15 @@ function createProject(user, metadata) {
         if (!metadata.hasOwnProperty('credentialSecret')) {
             metadata.credentialSecret = currentEncryptionKey;
         }
-        metadata.files.flow = flowsFullPath;
-        metadata.files.credentials = credentialsFile;
+        if (!metadata.files.flow) {
+            metadata.files.flow = fspath.basename(flowsFullPath);
+        }
+        if (!metadata.files.credentials) {
+            metadata.files.credentials = fspath.basename(credentialsFile);
+        }
+
+        metadata.files.oldFlow = flowsFullPath;
+        metadata.files.oldCredentials = credentialsFile;
         metadata.files.credentialSecret = currentEncryptionKey;
     }
     return Projects.create(null,metadata).then(function(p) {
@@ -304,6 +340,21 @@ function setActiveProject(user, projectName) {
             // console.log(credentialsFile)
             return reloadActiveProject("loaded");
         })
+    });
+}
+
+function initialiseProject(user, project, data) {
+    if (!activeProject || activeProject.name !== project) {
+        // TODO standardise
+        throw new Error("Cannot initialise inactive project");
+    }
+    return activeProject.initialise(user,data).then(function(result) {
+        flowsFullPath = activeProject.getFlowFile();
+        flowsFileBackup = activeProject.getFlowFileBackup();
+        credentialsFile = activeProject.getCredentialsFile();
+        credentialsFileBackup = activeProject.getCredentialsFileBackup();
+        runtime.nodes.setCredentialSecret(activeProject.credentialSecret);
+        return reloadActiveProject("updated");
     });
 }
 function updateProject(user, project, data) {
@@ -393,9 +444,16 @@ function getFlows() {
         }
     }
     if (activeProject) {
+        var error;
+        if (activeProject.isEmpty()) {
+            log.warn("Project repository is empty");
+            error = new Error("Project repository is empty");
+            error.code = "project_empty";
+            return when.reject(error);
+        }
         if (!activeProject.getFlowFile()) {
-            log.warn("NLS: project has no flow file");
-            var error = new Error("NLS: project has no flow file");
+            log.warn("Project has no flow file");
+            error = new Error("Project has no flow file");
             error.code = "missing_flow_file";
             return when.reject(error);
         }
@@ -445,6 +503,16 @@ function saveCredentials(credentials) {
     return util.writeFile(credentialsFile, credentialData);
 }
 
+function getFlowFilename() {
+    if (flowsFullPath) {
+        return fspath.basename(flowsFullPath);
+    }
+}
+function getCredentialsFilename() {
+    if (flowsFullPath) {
+        return fspath.basename(credentialsFile);
+    }
+}
 
 module.exports = {
     init: init,
@@ -454,6 +522,7 @@ module.exports = {
     getProject: getProject,
     deleteProject: deleteProject,
     createProject: createProject,
+    initialiseProject: initialiseProject,
     updateProject: updateProject,
     getFiles: getFiles,
     getFile: getFile,
@@ -473,6 +542,12 @@ module.exports = {
     deleteBranch: deleteBranch,
     setBranch: setBranch,
     getBranchStatus:getBranchStatus,
+    getRemotes: getRemotes,
+    addRemote: addRemote,
+    removeRemote: removeRemote,
+    updateRemote: updateRemote,
+    getFlowFilename: getFlowFilename,
+    getCredentialsFilename: getCredentialsFilename,
 
     getFlows: getFlows,
     saveFlows: saveFlows,

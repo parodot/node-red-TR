@@ -42,17 +42,6 @@ RED.projects = (function() {
                     $('<p>').text("To get started you can create your first project using your current flow files in a few easy steps.").appendTo(body);
                     $('<p>').text("If you are not sure, you can skip this for now. You will still be able to create your first project from the 'Projects' menu option at any time.").appendTo(body);
 
-                    // var buttons = $('<div style="margin: 30px"></div>').appendTo(container);
-                    // var createNew = $('<button class="editor-button"><i class="fa fa-archive fa-2x"></i><i class="fa fa-plus-circle" style="position:absolute"></i><br/>Create a project</button>').appendTo(buttons);
-                    // createNew.click(function(e) {
-                    //     e.preventDefault();
-                    //     show('create');
-                    // });
-                    // var openExisting = $('<button class="editor-button"><i class="fa fa-folder-open-o fa-2x"></i><br/>Open a project</button>').appendTo(buttons);
-                    // openExisting.click(function(e) {
-                    //     e.preventDefault();
-                    //     show('open')
-                    // });
                     return container;
                 },
                 buttons: [
@@ -83,7 +72,7 @@ RED.projects = (function() {
                         migrateProjectHeader.appendTo(container);
                         var body = $('<div class="projects-dialog-screen-start-body"></div>').appendTo(container);
 
-                        $('<p>').text("Step 1 : Setup your version control client").appendTo(body);
+                        $('<p>').text("Setup your version control client").appendTo(body);
                         $('<p>').text("Node-RED uses the open source tool Git for version control. It tracks changes to your project files and lets you push them to remote repositories.").appendTo(body);
                         $('<p>').text("When you commit a set of changes, Git records who made the changes with a username and email address. The Username can be anything you want - it does not need to be your real name.").appendTo(body);
                         $('<p>').text("If your Git client is already configured, you can skip this step.").appendTo(body);
@@ -139,25 +128,24 @@ RED.projects = (function() {
                         migrateProjectHeader.appendTo(container);
                         var body = $('<div class="projects-dialog-screen-start-body"></div>').appendTo(container);
 
-                        $('<p>').text("Step 2 : Create your project").appendTo(body);
-                        $('<p>').text("A project contains your flow files, a README file, a package.json file and a settings file. It makes it much easier to share your flows with others and to collaborate on them.").appendTo(body);
+                        $('<p>').text("Create your project").appendTo(body);
+                        $('<p>').text("A project is maintained as a Git repository. It makes it much easier to share your flows with others and to collaborate on them.").appendTo(body);
                         $('<p>').text("You can create multiple projects and quickly switch between them from the editor.").appendTo(body);
                         $('<p>').text("To begin, your project needs a name and an optional description.").appendTo(body);
 
                         var validateForm = function() {
                             var projectName = projectNameInput.val();
                             var valid = true;
+                            var projectNameValid = /^[a-zA-Z0-9\-_]+$/.test(projectName);
                             if (projectNameInputChanged) {
                                 projectNameStatus.empty();
-                                if (!/^[a-zA-Z0-9\-_]+$/.test(projectName)) {
+                                if (!projectNameValid) {
                                     projectNameInput.addClass("input-error");
                                     $('<i style="margin-top: 8px;" class="fa fa-exclamation-triangle"></i>').appendTo(projectNameStatus);
-                                    projectNameValid = false;
                                     valid = false;
                                 } else {
                                     projectNameInput.removeClass("input-error");
                                     $('<i style="margin-top: 8px;" class="fa fa-check"></i>').appendTo(projectNameStatus);
-                                    projectNameValid = true;
                                 }
                                 projectNameLastChecked = projectName;
                             }
@@ -206,6 +194,7 @@ RED.projects = (function() {
 
                         setTimeout(function() {
                             projectNameInput.focus();
+                            validateForm();
                         },50);
                         return container;
                     },
@@ -224,14 +213,112 @@ RED.projects = (function() {
                             click: function() {
                                 createProjectOptions.name = projectNameInput.val();
                                 createProjectOptions.summary = projectSummaryInput.val();
-                                createProjectOptions.files = { migrateFiles: true };
-                                show('encryption-config');
+                                show('default-files');
                             }
                         }
                     ]
                 };
             })(),
+            'default-files': (function() {
+                var projectFlowFileInput;
+                var projectCredentialFileInput;
+                return {
+                    content: function(options) {
+                        var container = $('<div class="projects-dialog-screen-start"></div>');
+                        migrateProjectHeader.appendTo(container);
+                        var body = $('<div class="projects-dialog-screen-start-body"></div>').appendTo(container);
 
+                        $('<p>').text("Create your project files").appendTo(body);
+                        $('<p>').text("A project contains your flow files, a README file, a package.json file and a settings file.").appendTo(body);
+                        $('<p>').text("It can contain any other files you want to maintain in the Git repository.").appendTo(body);
+                        if (!options.existingProject) {
+                            $('<p>').text("Your existing flow and credential files will be copied into the project.").appendTo(body);
+                        }
+
+                        var validateForm = function() {
+                            var valid = true;
+                            var flowFile = projectFlowFileInput.val();
+                            if (flowFile === "" || !/\.json$/.test(flowFile)) {
+                                valid = false;
+                                if (!projectFlowFileInput.hasClass("input-error")) {
+                                    projectFlowFileInput.addClass("input-error");
+                                    projectFlowFileInput.next().empty().append('<i style="margin-top: 8px;" class="fa fa-exclamation-triangle"></i>');
+                                }
+                                projectCredentialFileInput.text("");
+                                if (!projectCredentialFileInput.hasClass("input-error")) {
+                                    projectCredentialFileInput.addClass("input-error");
+                                    projectCredentialFileInput.next().empty().append('<i style="margin-top: 8px;" class="fa fa-exclamation-triangle"></i>');
+                                }
+                            } else {
+                                if (projectFlowFileInput.hasClass("input-error")) {
+                                    projectFlowFileInput.removeClass("input-error");
+                                    projectFlowFileInput.next().empty();
+                                }
+                                if (projectCredentialFileInput.hasClass("input-error")) {
+                                    projectCredentialFileInput.removeClass("input-error");
+                                    projectCredentialFileInput.next().empty();
+                                }
+                                projectCredentialFileInput.text(flowFile.substring(0,flowFile.length-5)+"_cred.json");
+                            }
+                            $("#projects-dialog-create-default-files").prop('disabled',!valid).toggleClass('disabled ui-button-disabled ui-state-disabled',!valid);
+                        }
+                        var row = $('<div class="form-row"></div>').appendTo(body);
+                        $('<label for="projects-dialog-screen-create-project-file">Flow file</label>').appendTo(row);
+                        var subrow = $('<div style="position:relative;"></div>').appendTo(row);
+                        var defaultFlowFile = (createProjectOptions.files &&createProjectOptions.files.flow) || RED.settings.files.flow||"flow.json";
+                        projectFlowFileInput = $('<input id="projects-dialog-screen-create-project-file" type="text">').val(defaultFlowFile)
+                            .on("change keyup paste",validateForm)
+                            .appendTo(subrow);
+                        $('<div class="projects-dialog-screen-input-status"></div>').appendTo(subrow);
+                        $('<label class="projects-edit-form-sublabel"><small>*.json</small></label>').appendTo(row);
+
+                        var defaultCredentialsFile = (createProjectOptions.files &&createProjectOptions.files.credentials) || RED.settings.files.credentials||"flow_cred.json";
+                        row = $('<div class="form-row"></div>').appendTo(body);
+                        $('<label for="projects-dialog-screen-create-project-credfile">Credentials file</label>').appendTo(row);
+                        subrow = $('<div style="position:relative;"></div>').appendTo(row);
+                        projectCredentialFileInput = $('<div style="width: 100%" class="uneditable-input" id="projects-dialog-screen-create-project-credentials">').text(defaultCredentialsFile)
+                            .appendTo(subrow);
+                        $('<div class="projects-dialog-screen-input-status"></div>').appendTo(subrow);
+
+                        setTimeout(function() {
+                            projectFlowFileInput.focus();
+                            validateForm();
+                        },50);
+
+                        return container;
+                    },
+                    buttons: function(options) {
+                        return [
+                            {
+                                // id: "clipboard-dialog-cancel",
+                                text: options.existingProject?"Cancel":"Back",
+                                click: function() {
+                                    if (options.existingProject) {
+                                        $(this).dialog('close');
+                                    } else {
+                                        show('project-details',options);
+                                    }
+                                }
+                            },
+                            {
+                                id: "projects-dialog-create-default-files",
+                                text: "Next", // TODO: nls
+                                class: "primary",
+                                click: function() {
+                                    createProjectOptions.files = {
+                                        flow: projectFlowFileInput.val(),
+                                        credentials: projectCredentialFileInput.text()
+                                    }
+                                    if (!options.existingProject) {
+                                        createProjectOptions.migrateFiles = true;
+                                    }
+                                    show('encryption-config',options);
+                                }
+                            }
+                        ]
+                    }
+                }
+            })(),
             'encryption-config': (function() {
                 var emptyProjectCredentialInput;
                 return {
@@ -241,20 +328,23 @@ RED.projects = (function() {
                         migrateProjectHeader.appendTo(container);
                         var body = $('<div class="projects-dialog-screen-start-body"></div>').appendTo(container);
 
-                        $('<p>').text("Step 3 : Setup encryption of your credentials file").appendTo(body);
-                        // $('<p>').text("Your flow credentials file can be encrypted to keep its contents secure.").appendTo(body);
-
-                        if (RED.settings.flowEncryptionType === 'disabled') {
-                            $('<p>').text("Your flow credentials file is not currently encrypted.").appendTo(body);
-                            $('<p>').text("That means its contents, such as passwords and access tokens, can be read by anyone with access to the file.").appendTo(body);
+                        $('<p>').text("Setup encryption of your credentials file").appendTo(body);
+                        if (options.existingProject) {
+                            $('<p>').text("Your flow credentials file can be encrypted to keep its contents secure.").appendTo(body);
                             $('<p>').text("If you want to store these credentials in a public Git repository, you must encrypt them by providing a secret key phrase.").appendTo(body);
                         } else {
-                            if (RED.settings.flowEncryptionType === 'user') {
-                                $('<p>').text("Your flow credentials file is currently encrypted using the credentialSecret property from your settings file as the key.").appendTo(body);
-                            } else if (RED.settings.flowEncryptionType === 'system') {
-                                $('<p>').text("Your flow credentials file is currently encrypted using a system-generated secret as the key. You should provide a new secret key for this project.").appendTo(body);
+                            if (RED.settings.flowEncryptionType === 'disabled') {
+                                $('<p>').text("Your flow credentials file is not currently encrypted.").appendTo(body);
+                                $('<p>').text("That means its contents, such as passwords and access tokens, can be read by anyone with access to the file.").appendTo(body);
+                                $('<p>').text("If you want to store these credentials in a public Git repository, you must encrypt them by providing a secret key phrase.").appendTo(body);
+                            } else {
+                                if (RED.settings.flowEncryptionType === 'user') {
+                                    $('<p>').text("Your flow credentials file is currently encrypted using the credentialSecret property from your settings file as the key.").appendTo(body);
+                                } else if (RED.settings.flowEncryptionType === 'system') {
+                                    $('<p>').text("Your flow credentials file is currently encrypted using a system-generated secret as the key. You should provide a new secret key for this project.").appendTo(body);
+                                }
+                                $('<p>').text("The secret will be copied into the settings for your new project. You can then manage the secret within the editor.").appendTo(body);
                             }
-                            $('<p>').text("The secret will be copied into the settings for your new project. You can then manage the secret within the editor.").appendTo(body);
                         }
 
                         // var row = $('<div class="form-row"></div>').appendTo(body);
@@ -356,75 +446,89 @@ RED.projects = (function() {
 
                         return container;
                     },
-                    buttons: [
-                        {
-                            // id: "clipboard-dialog-cancel",
-                            text: "Back",
-                            click: function() {
-                                show('project-details');
-                            }
-                        },
-                        {
-                            id: "projects-dialog-create-encryption",
-                            text: "Create project", // TODO: nls
-                            class: "primary disabled",
-                            disabled: true,
-                            click: function() {
-                                var encryptionState = $("input[name=projects-encryption-type]:checked").val();
-                                if (encryptionState === 'enabled') {
-                                    var encryptionKeyType = $("input[name=projects-encryption-key]:checked").val();
-                                    if (encryptionKeyType === 'custom') {
-                                        createProjectOptions.credentialSecret = emptyProjectCredentialInput.val();
-                                    } else {
-                                        // If 'use existing', leave createProjectOptions.credentialSecret blank
-                                        // - that will trigger it to use the existing key
-                                        // TODO: this option should be disabled if encryption is disabled
-                                    }
-                                } else {
-                                    // Disabled encryption by explicitly setting credSec to false
-                                    createProjectOptions.credentialSecret = false;
+                    buttons: function(options) {
+                            return [
+                            {
+                                // id: "clipboard-dialog-cancel",
+                                text: "Back",
+                                click: function() {
+                                    show('default-files',options);
                                 }
+                            },
+                            {
+                                id: "projects-dialog-create-encryption",
+                                text: options.existingProject?"Create project files":"Create project", // TODO: nls
+                                class: "primary disabled",
+                                disabled: true,
+                                click: function() {
+                                    var encryptionState = $("input[name=projects-encryption-type]:checked").val();
+                                    if (encryptionState === 'enabled') {
+                                        var encryptionKeyType = $("input[name=projects-encryption-key]:checked").val();
+                                        if (encryptionKeyType === 'custom') {
+                                            createProjectOptions.credentialSecret = emptyProjectCredentialInput.val();
+                                        } else {
+                                            // If 'use existing', leave createProjectOptions.credentialSecret blank
+                                            // - that will trigger it to use the existing key
+                                            // TODO: this option should be disabled if encryption is disabled
+                                        }
+                                    } else {
+                                        // Disabled encryption by explicitly setting credSec to false
+                                        createProjectOptions.credentialSecret = false;
+                                    }
+                                    RED.deploy.setDeployInflight(true);
+                                    RED.projects.settings.switchProject(createProjectOptions.name);
 
-                                RED.deploy.setDeployInflight(true);
-                                RED.projects.settings.switchProject(createProjectOptions.name);
+                                    var method = "POST";
+                                    var url = "projects";
 
-                                sendRequest({
-                                    url: "projects",
-                                    type: "POST",
-                                    requireCleanWorkspace: true,
-                                    handleAuthFail: false,
-                                    responses: {
-                                        200: function(data) {
-                                            createProjectOptions = {};
-                                            show('create-success');
-                                        },
-                                        400: {
-                                            'project_exists': function(error) {
-                                                console.log("already exists");
+                                    if (options.existingProject) {
+                                        createProjectOptions.initialise = true;
+                                        method = "PUT";
+                                        url = "projects/"+activeProject.name;
+                                    }
+                                    var self = this;
+                                    sendRequest({
+                                        url: url,
+                                        type: method,
+                                        requireCleanWorkspace: true,
+                                        handleAuthFail: false,
+                                        responses: {
+                                            200: function(data) {
+                                                createProjectOptions = {};
+                                                if (options.existingProject) {
+                                                    $( self ).dialog( "close" );
+                                                } else {
+                                                    show('create-success');
+                                                }
                                             },
-                                            'git_error': function(error) {
-                                                console.log("git error",error);
-                                            },
-                                            'git_connection_failed': function(error) {
-                                                projectRepoInput.addClass("input-error");
-                                            },
-                                            'git_auth_failed': function(error) {
-                                                projectRepoUserInput.addClass("input-error");
-                                                projectRepoPasswordInput.addClass("input-error");
-                                                // getRepoAuthDetails(req);
-                                                console.log("git auth error",error);
-                                            },
-                                            'unexpected_error': function(error) {
-                                                console.log("unexpected_error",error)
+                                            400: {
+                                                'project_exists': function(error) {
+                                                    console.log("already exists");
+                                                },
+                                                'git_error': function(error) {
+                                                    console.log("git error",error);
+                                                },
+                                                'git_connection_failed': function(error) {
+                                                    projectRepoInput.addClass("input-error");
+                                                },
+                                                'git_auth_failed': function(error) {
+                                                    projectRepoUserInput.addClass("input-error");
+                                                    projectRepoPasswordInput.addClass("input-error");
+                                                    // getRepoAuthDetails(req);
+                                                    console.log("git auth error",error);
+                                                },
+                                                'unexpected_error': function(error) {
+                                                    console.log("unexpected_error",error)
+                                                }
                                             }
                                         }
-                                    }
-                                },createProjectOptions).always(function() {
-                                    RED.deploy.setDeployInflight(false);
-                                })
+                                    },createProjectOptions).always(function() {
+                                        RED.deploy.setDeployInflight(false);
+                                    })
+                                }
                             }
-                        }
-                    ]
+                        ];
+                    }
                 }
             })(),
             'create-success': {
@@ -437,10 +541,10 @@ RED.projects = (function() {
                     $('<p>').text("You have successfully created your first project!").appendTo(body);
                     $('<p>').text("You can now continue to use Node-RED just as you always have.").appendTo(body);
                     $('<p>').text("The 'info' tab in the sidebar shows you what your current active project is. "+
-                                  "The button next to the name can be used to access the project settings view.").appendTo(body);
-                    $('<p>').text("The new 'history' tab in the sidebar can be used to view files that have changed "+
-                                  "in your project and to commit them. It shows you a complete history of your commits and "+
-                                  "allows you to push your changes to a remote repository.").appendTo(body);
+                    "The button next to the name can be used to access the project settings view.").appendTo(body);
+                    $('<p>').text("The 'history' tab in the sidebar can be used to view files that have changed "+
+                    "in your project and to commit them. It shows you a complete history of your commits and "+
+                    "allows you to push your changes to a remote repository.").appendTo(body);
 
                     return container;
                 },
@@ -465,6 +569,7 @@ RED.projects = (function() {
                 var projectRepoUserInput;
                 var projectRepoPasswordInput;
                 var projectNameSublabel;
+                var projectRepoSSHKeySelect;
                 var projectRepoPassphrase;
                 var projectRepoRemoteName
                 var projectRepoBranch;
@@ -536,13 +641,16 @@ RED.projects = (function() {
                                 }
                                 if (/^(?:ssh|[\d\w\.\-_]+@[\w\.]+):(?:\/\/)?/.test(repo)) {
                                     $(".projects-dialog-screen-create-row-creds").hide();
-                                    $(".projects-dialog-screen-create-row-passphrase").show();
+                                    $(".projects-dialog-screen-create-row-sshkey").show();
+                                    // if ( !getSelectedSSHKey(projectRepoSSHKeySelect) ) {
+                                    //     valid = false;
+                                    // }
                                 } else if (/^https?:\/\//.test(repo)) {
                                     $(".projects-dialog-screen-create-row-creds").show();
-                                    $(".projects-dialog-screen-create-row-passphrase").hide();
+                                    $(".projects-dialog-screen-create-row-sshkey").hide();
                                 } else {
                                     $(".projects-dialog-screen-create-row-creds").show();
-                                    $(".projects-dialog-screen-create-row-passphrase").hide();
+                                    $(".projects-dialog-screen-create-row-sshkey").hide();
                                 }
 
 
@@ -584,6 +692,7 @@ RED.projects = (function() {
                             $(".projects-dialog-screen-create-row").hide();
                             $(".projects-dialog-screen-create-row-"+$(this).data('type')).show();
                             validateForm();
+                            projectNameInput.focus();
                         })
 
 
@@ -679,12 +788,12 @@ RED.projects = (function() {
                         })
 
                         row = $('<div class="form-row projects-encryption-enabled-row"></div>').appendTo(credentialsRightBox);
-                        $('<label class="projects-edit-form-inline-label" style="margin-left: 5px"><input type="radio" checked style="vertical-align: middle; margin-top:0; margin-right: 10px;" value="default" name="projects-encryption-key"> <span style="vertical-align: middle;">Use default key</span></label>').appendTo(row);
-                        row = $('<div class="form-row projects-encryption-enabled-row"></div>').appendTo(credentialsRightBox);
-                        $('<label class="projects-edit-form-inline-label" style="margin-left: 5px"><input type="radio" style="vertical-align: middle; margin-top:0; margin-right: 10px;" value="custom" name="projects-encryption-key"> <span style="vertical-align: middle;">Use custom key</span></label>').appendTo(row);
-                        row = $('<div class="projects-encryption-enabled-row"></div>').appendTo(credentialsRightBox);
-                        emptyProjectCredentialInput = $('<input disabled type="password" style="margin-left: 25px; width: calc(100% - 30px);"></input>').appendTo(row);
+                        $('<label class="projects-edit-form-inline-label">Encryption key</label>').appendTo(row);
+                        // row = $('<div class="projects-encryption-enabled-row"></div>').appendTo(credentialsRightBox);
+                        emptyProjectCredentialInput = $('<input type="password"></input>').appendTo(row);
                         emptyProjectCredentialInput.on("change keyup paste", validateForm);
+                        $('<label class="projects-edit-form-sublabel"><small>A phrase to secure your credentials with</small></label>').appendTo(row);
+
 
                         row = $('<div class="form-row projects-encryption-disabled-row"></div>').hide().appendTo(credentialsRightBox);
                         $('<div class="" style="padding: 5px 20px;"><i class="fa fa-warning"></i> The credentials file will not be encrypted and its contents easily read</div>').appendTo(row);
@@ -748,20 +857,44 @@ RED.projects = (function() {
                         $('<label for="projects-dialog-screen-create-project-repo-pass">Password</label>').appendTo(subrow);
                         projectRepoPasswordInput = $('<input id="projects-dialog-screen-create-project-repo-pass" type="password"></input>').appendTo(subrow);
 
-                        row = $('<div class="form-row projects-dialog-screen-create-row projects-dialog-screen-create-row-passphrase"></div>').hide().appendTo(container);
-                        $('<label for="projects-dialog-screen-create-project-repo-passphrase">SSH key passphrase</label>').appendTo(row);
-                        projectRepoPassphrase = $('<input id="projects-dialog-screen-create-project-repo-passphrase" type="password" style="width: calc(100% - 250px);"></input>').appendTo(row);
+                        row = $('<div class="form-row projects-dialog-screen-create-row projects-dialog-screen-create-row-sshkey"></div>').hide().appendTo(container);
+                        subrow = $('<div style="width: calc(50% - 10px); display:inline-block;"></div>').appendTo(row);
+                        $('<label for="projects-dialog-screen-create-project-repo-passphrase">SSH Key</label>').appendTo(subrow);
+                        projectRepoSSHKeySelect = $("<select>",{style:"width: 100%"}).appendTo(subrow);
 
-                        // row = $('<div style="width: calc(50% - 10px); display:inline-block;" class="form-row projects-dialog-screen-create-row projects-dialog-screen-create-row-clone"></div>').hide().appendTo(container);
-                        // $('<label for="projects-dialog-screen-create-project-repo-remote-name">Remote name</label>').appendTo(row);
-                        // projectRepoRemoteName = $('<input id="projects-dialog-screen-create-project-repo-remote-name" type="text" style="width: 100%;"></input>').val("origin").appendTo(row);
-                        //
-                        // row = $('<div style="width: calc(50% - 10px); margin-left: 20px; display:inline-block;" class="form-row projects-dialog-screen-create-row projects-dialog-screen-create-row-clone"></div>').hide().appendTo(container);
-                        // $('<label for="projects-dialog-screen-create-project-repo-branch">Branch</label>').appendTo(row);
-                        // projectRepoBranch = $('<input id="projects-dialog-screen-create-project-repo-branch" type="text"></input>').val('master').appendTo(row);
+                        $.getJSON("settings/user/keys", function(data) {
+                            var count = 0;
+                            data.keys.forEach(function(key) {
+                                projectRepoSSHKeySelect.append($("<option></option>").val(key.name).text(key.name));
+                                count++;
+                            });
+                            if (count === 0) {
+                                projectRepoSSHKeySelect.addClass("input-error");
+                                projectRepoSSHKeySelect.attr("disabled",true);
+                                sshwarningRow.show();
+                            } else {
+                                projectRepoSSHKeySelect.removeClass("input-error");
+                                projectRepoSSHKeySelect.attr("disabled",false);
+                                sshwarningRow.hide();
+                            }
+                        });
 
 
+                        subrow = $('<div style="width: calc(50% - 10px); margin-left: 20px; display:inline-block;"></div>').appendTo(row);
+                        $('<label for="projects-dialog-screen-create-project-repo-passphrase">Passphrase</label>').appendTo(subrow);
+                        projectRepoPassphrase = $('<input id="projects-dialog-screen-create-project-repo-passphrase" type="password"></input>').appendTo(subrow);
 
+                        var sshwarningRow = $('<div style="padding: 20px"></div>').hide().appendTo(row);
+                        $('<div class="form-row"><i class="fa fa-warning"></i> Before you can clone a repository over ssh you must add an SSH key to access it.</div>').appendTo(sshwarningRow);
+                        subrow = $('<div style="text-align: center">').appendTo(sshwarningRow);
+                        $('<button class="editor-button">Add an ssh key</button>').appendTo(subrow).click(function(e) {
+                            e.preventDefault();
+                            $('#projects-dialog-cancel').click();
+                            RED.userSettings.show('gitconfig');
+                            setTimeout(function() {
+                                $("#user-settings-gitconfig-add-key").click();
+                            },500);
+                        });
 
                         // // Secret - clone
                         // row = $('<div class="hide form-row projects-dialog-screen-create-row projects-dialog-screen-create-row-clone"></div>').appendTo(container);
@@ -770,11 +903,14 @@ RED.projects = (function() {
 
                         createAsEmpty.click();
 
+                        setTimeout(function() {
+                            projectNameInput.focus();
+                        },50);
                         return container;
                     },
                     buttons: [
                         {
-                            // id: "clipboard-dialog-cancel",
+                            id: "projects-dialog-cancel",
                             text: RED._("common.label.cancel"),
                             click: function() {
                                 $( this ).dialog( "close" );
@@ -814,14 +950,36 @@ RED.projects = (function() {
                                     projectData.copy = copyProject.name;
                                 } else if (projectType === 'clone') {
                                     // projectData.credentialSecret = projectSecretInput.val();
-                                    projectData.git = {
-                                        remotes: {
-                                            'origin': {
-                                                url: projectRepoInput.val(),
-                                                username: projectRepoUserInput.val(),
-                                                password: projectRepoPasswordInput.val()
-                                            }
+                                    var repoUrl = projectRepoInput.val();
+                                    var metaData = {};
+                                    if (/^(?:ssh|[\d\w\.\-_]+@[\w\.]+):(?:\/\/)?/.test(repoUrl)) {
+                                        var selected = projectRepoSSHKeySelect.val();//false;//getSelectedSSHKey(projectRepoSSHKeySelect);
+                                        if ( selected ) {
+                                            projectData.git = {
+                                                remotes: {
+                                                    'origin': {
+                                                        url: repoUrl,
+                                                        keyFile: selected,
+                                                        passphrase: projectRepoPassphrase.val()
+                                                    }
+                                                }
+                                            };
                                         }
+                                        else {
+                                            console.log("Error! Can't get selected SSH key path.");
+                                            return;
+                                        }
+                                    }
+                                    else {
+                                        projectData.git = {
+                                            remotes: {
+                                                'origin': {
+                                                    url: repoUrl,
+                                                    username: projectRepoUserInput.val(),
+                                                    password: projectRepoPasswordInput.val()
+                                                }
+                                            }
+                                        };
                                     }
                                 }
 
@@ -851,14 +1009,22 @@ RED.projects = (function() {
                                                     projectRepoUserInput.addClass("input-error");
                                                     projectRepoPasswordInput.addClass("input-error");
                                                     // getRepoAuthDetails(req);
+                                                    projectRepoSSHKeySelect.addClass("input-error");
+                                                    projectRepoPassphrase.addClass("input-error");
                                                     console.log("git auth error",error);
+                                                },
+                                                'project_empty': function(error) {
+                                                    // This is handled via a runtime notification.
+                                                    dialog.dialog("close");
                                                 },
                                                 'unexpected_error': function(error) {
                                                     console.log("unexpected_error",error)
                                                 }
                                             }
                                         }
-                                    },projectData).always(function() {
+                                    },projectData).then(function() {
+                                        RED.events.emit("project:change", {name:name});
+                                    }).always(function() {
                                         RED.deploy.setDeployInflight(false);
                                     })
 
@@ -916,90 +1082,97 @@ RED.projects = (function() {
                     ]
                 }
             })(),
-            'open': {
-                content: function() {
-                    return createProjectList({
-                        canSelectActive: false,
-                        dblclick: function() {
-                            $("#projects-dialog-open").click();
-                        },
-                        select: function() {
-                            $("#projects-dialog-open").prop('disabled',false).removeClass('disabled ui-button-disabled ui-state-disabled');
-                        }
-                    })
-                },
-                buttons: [
-                    {
-                        // id: "clipboard-dialog-cancel",
-                        text: RED._("common.label.cancel"),
-                        click: function() {
-                            $( this ).dialog( "close" );
-                        }
+            'open': (function() {
+                var selectedProject;
+                return {
+                    title: "Select a project to open", // TODO: NLS
+                    content: function() {
+                        return createProjectList({
+                            canSelectActive: false,
+                            dblclick: function(project) {
+                                selectedProject = project;
+                                $("#projects-dialog-open").click();
+                            },
+                            select: function(project) {
+                                selectedProject = project;
+                                $("#projects-dialog-open").prop('disabled',false).removeClass('disabled ui-button-disabled ui-state-disabled');
+                            }
+                        })
                     },
-                    {
-                        id: "projects-dialog-open",
-                        text: "Open project", // TODO: nls
-                        class: "primary disabled",
-                        disabled: true,
-                        click: function() {
-                            switchProject(selectedProject.name,function(err,data) {
-                                if (err) {
-                                    if (err.error === 'credentials_load_failed') {
-                                        dialog.dialog( "close" );
-                                    } else {
-                                        console.log("unexpected_error",err)
-                                    }
-                                } else {
-                                    dialog.dialog( "close" );
-                                }
-                            })
-                        }
-                    }
-                ]
-            },
-
-            'delete': {
-                content: function() {
-                    return createProjectList({
-                        canSelectActive: false,
-                        dblclick: function() {
-                            $("#projects-dialog-delete").click();
+                    buttons: [
+                        {
+                            // id: "clipboard-dialog-cancel",
+                            text: RED._("common.label.cancel"),
+                            click: function() {
+                                $( this ).dialog( "close" );
+                            }
                         },
-                        select: function() {
-                            $("#projects-dialog-delete").prop('disabled',false).removeClass('disabled ui-button-disabled ui-state-disabled');
-                        }
-                    })
-                },
-                buttons: [
-                    {
-                        // id: "clipboard-dialog-cancel",
-                        text: RED._("common.label.cancel"),
-                        click: function() {
-                            $( this ).dialog( "close" );
-                        }
-                    },
-                    {
-                        id: "projects-dialog-delete",
-                        text: "Delete project", // TODO: nls
-                        class: "primary disabled",
-                        disabled: true,
-                        click: function() {
-                            deleteProject(selectedProject.name,function(err,data) {
-                                if (err) {
-                                    if (err.error === 'credentials_load_failed') {
-                                        dialog.dialog( "close" );
-                                    } else {
-                                        console.log("unexpected_error",err)
+                        {
+                            id: "projects-dialog-open",
+                            text: "Open project", // TODO: nls
+                            class: "primary disabled",
+                            disabled: true,
+                            click: function() {
+                                dialog.dialog( "close" );
+                                switchProject(selectedProject.name,function(err,data) {
+                                    if (err) {
+                                        if (err.error !== 'credentials_load_failed') {
+                                            console.log("unexpected_error",err)
+                                        }
                                     }
-                                } else {
-                                    dialog.dialog( "close" );
-                                }
-                            })
+                                })
+                            }
                         }
-                    }
-                ]
-
-            }
+                    ]
+                }
+            })(),
+            'delete': (function() {
+                var selectedProject;
+                return {
+                    title: "Select a project to delete", // TODO: NLS
+                    content: function() {
+                        return createProjectList({
+                            canSelectActive: false,
+                            dblclick: function(project) {
+                                selectedProject = project;
+                                $("#projects-dialog-delete").click();
+                            },
+                            select: function(project) {
+                                selectedProject = project;
+                                $("#projects-dialog-delete").prop('disabled',false).removeClass('disabled ui-button-disabled ui-state-disabled');
+                            }
+                        })
+                    },
+                    buttons: [
+                        {
+                            // id: "clipboard-dialog-cancel",
+                            text: RED._("common.label.cancel"),
+                            click: function() {
+                                $( this ).dialog( "close" );
+                            }
+                        },
+                        {
+                            id: "projects-dialog-delete",
+                            text: "Delete project", // TODO: nls
+                            class: "primary disabled",
+                            disabled: true,
+                            click: function() {
+                                deleteProject(selectedProject.name,function(err,data) {
+                                    if (err) {
+                                        if (err.error === 'credentials_load_failed') {
+                                            dialog.dialog( "close" );
+                                        } else {
+                                            console.log("unexpected_error",err)
+                                        }
+                                    } else {
+                                        dialog.dialog( "close" );
+                                    }
+                                })
+                            }
+                        }
+                    ]
+                }
+            })()
         }
     }
 
@@ -1023,7 +1196,9 @@ RED.projects = (function() {
                     }
                 },
             }
-        },{active:true}).always(function() {
+        },{active:true}).then(function() {
+            RED.events.emit("project:change", {name:name});
+        }).always(function() {
             RED.deploy.setDeployInflight(false);
         })
     }
@@ -1053,22 +1228,124 @@ RED.projects = (function() {
         var container = screen.content(options);
 
         dialogBody.empty();
-        dialog.dialog('option','buttons',screen.buttons);
+        var buttons = screen.buttons;
+        if (typeof buttons === 'function') {
+            buttons = buttons(options);
+        }
+        dialog.dialog('option','buttons',buttons);
         dialogBody.append(container);
         dialog.dialog('option','title',screen.title||"");
         dialog.dialog("open");
-        dialog.dialog({position: { 'my': 'center', 'at': 'center', 'of': window }});
+        dialog.dialog({position: { 'my': 'center top', 'at': 'center top+10%', 'of': window }});
     }
-
-    var selectedProject = null;
 
     function createProjectList(options) {
         options = options||{};
         var height = options.height || "300px";
-        selectedProject = null;
-        var container = $('<div></div>',{style:"min-height: "+height+"; height: "+height+";"});
+        var container = $('<div></div>',{class:"projects-dialog-project-list-container" });
+        var filterTerm = "";
 
-        var list = $('<ol>',{class:"projects-dialog-project-list", style:"height:"+height}).appendTo(container).editableList({
+        var searchDiv = $("<div>",{class:"red-ui-search-container"}).appendTo(container);
+        var searchInput = $('<input type="text" placeholder="search your projects">').appendTo(searchDiv).searchBox({
+            //data-i18n="[placeholder]menu.label.searchInput"
+            delay: 200,
+            change: function() {
+                filterTerm = $(this).val().toLowerCase();
+                list.editableList('filter');
+                if (selectedListItem && !selectedListItem.is(":visible")) {
+                    selectedListItem.children().children().removeClass('selected');
+                    selectedListItem = list.children(":visible").first();
+                    selectedListItem.children().children().addClass('selected');
+                    if (options.select) {
+                        options.select(selectedListItem.children().data('data'));
+                    }
+                } else {
+                    selectedListItem = list.children(":visible").first();
+                    selectedListItem.children().children().addClass('selected');
+                    if (options.select) {
+                        options.select(selectedListItem.children().data('data'));
+                    }
+                }
+                ensureSelectedIsVisible();
+            }
+        });
+        var selectedListItem;
+
+        searchInput.on('keydown',function(evt) {
+            if (evt.keyCode === 40) {
+                evt.preventDefault();
+                // Down
+                var next = selectedListItem;
+                if (selectedListItem) {
+                    do {
+                        next = next.next();
+                    } while(next.length !== 0 && !next.is(":visible"));
+                    if (next.length === 0) {
+                        return;
+                    }
+                    selectedListItem.children().children().removeClass('selected');
+                } else {
+                    next = list.children(":visible").first();
+                }
+                selectedListItem = next;
+                selectedListItem.children().children().addClass('selected');
+                if (options.select) {
+                    options.select(selectedListItem.children().data('data'));
+                }
+                ensureSelectedIsVisible();
+            } else if (evt.keyCode === 38) {
+                evt.preventDefault();
+                // Up
+                var prev = selectedListItem;
+                if (selectedListItem) {
+                    do {
+                        prev = prev.prev();
+                    } while(prev.length !== 0 && !prev.is(":visible"));
+                    if (prev.length === 0) {
+                        return;
+                    }
+                    selectedListItem.children().children().removeClass('selected');
+                } else {
+                    prev = list.children(":visible").first();
+                }
+                selectedListItem = prev;
+                selectedListItem.children().children().addClass('selected');
+                if (options.select) {
+                    options.select(selectedListItem.children().data('data'));
+                }
+                ensureSelectedIsVisible();
+            } else if (evt.keyCode === 13) {
+                evt.preventDefault();
+                // Enter
+                if (selectedListItem) {
+                    if (options.dblclick) {
+                        options.dblclick(selectedListItem.children().data('data'));
+                    }
+                }
+            }
+        });
+
+        searchInput.i18n();
+
+        var ensureSelectedIsVisible = function() {
+            var selectedEntry = list.find(".projects-dialog-project-list-entry.selected").parent().parent();
+            if (selectedEntry.length === 1) {
+                var scrollWindow = listContainer;
+                var scrollHeight = scrollWindow.height();
+                var scrollOffset = scrollWindow.scrollTop();
+                var y = selectedEntry.position().top;
+                var h = selectedEntry.height();
+                if (y > scrollHeight) {
+                    scrollWindow.animate({scrollTop: '-='+(scrollHeight-y+10)},50);
+                } else if (y-h<0) {
+                    scrollWindow.animate({scrollTop: '+='+(y-h-10)},50);
+                }
+            }
+        }
+
+        var listContainer = $('<div></div>',{class:"projects-dialog-project-list-inner-container" }).appendTo(container);
+
+        var list = $('<ol>',{class:"projects-dialog-project-list"}).appendTo(listContainer).editableList({
             addButton: false,
             scrollOnAdd: false,
             addItem: function(row,index,entry) {
@@ -1087,17 +1364,23 @@ RED.projects = (function() {
                 row.click(function(evt) {
                     $('.projects-dialog-project-list-entry').removeClass('selected');
                     header.addClass('selected');
-                    selectedProject = entry;
+                    selectedListItem = row.parent();
                     if (options.select) {
                         options.select(entry);
                     }
+                    ensureSelectedIsVisible();
+                    searchInput.focus();
                 })
                 if (options.dblclick) {
                     row.dblclick(function(evt) {
                         evt.preventDefault();
-                        options.dblclick();
+                        options.dblclick(entry);
                     })
                 }
+            },
+            filter: function(data) {
+                if (filterTerm === "") { return true; }
+                return data.name.toLowerCase().indexOf(filterTerm) !== -1;
             }
         });
         if (options.small) {
@@ -1110,6 +1393,9 @@ RED.projects = (function() {
         })
         return container;
     }
+
+
+
 
     function sendRequest(options,body) {
         // dialogBody.hide();
@@ -1179,13 +1465,37 @@ RED.projects = (function() {
                     resultCallbackArgs = {error:responses.statusText};
                     return;
                 } else if (options.handleAuthFail !== false && xhr.responseJSON.error === 'git_auth_failed') {
-                    var url = activeProject.git.remotes.origin.fetch;
+                    var url = activeProject.git.remotes[options.remote||'origin'].fetch;
+
                     var message = $('<div>'+
                         '<div class="form-row">Authentication required for repository:</div>'+
                         '<div class="form-row"><div style="margin-left: 20px;">'+url+'</div></div>'+
-                        '<div class="form-row"><label for="projects-user-auth-username">Username</label><input id="projects-user-auth-username" type="text"></input></div>'+
-                        '<div class="form-row"><label for=projects-user-auth-password">Password</label><input id="projects-user-auth-password" type="password"></input></div>'+
                         '</div>');
+
+                    var isSSH = false;
+                    if (/^(?:ssh|[\d\w\.\-_]+@[\w\.]+):(?:\/\/)?/.test(url)) {
+                        isSSH = true;
+                        var row = $('<div class="form-row"></div>').appendTo(message);
+                        $('<label for="projects-user-auth-key">SSH Key</label>').appendTo(row);
+                        var projectRepoSSHKeySelect = $('<select id="projects-user-auth-key">').width('70%').appendTo(row);
+                        $.getJSON("settings/user/keys", function(data) {
+                            var count = 0;
+                            data.keys.forEach(function(key) {
+                                projectRepoSSHKeySelect.append($("<option></option>").val(key.name).text(key.name));
+                                count++;
+                            });
+                            if (count === 0) {
+                                //TODO: handle no keys yet setup
+                            }
+                        });
+                        row = $('<div class="form-row"></div>').appendTo(message);
+                        $('<label for="projects-user-auth-passphrase">Passphrase</label>').appendTo(row);
+                        $('<input id="projects-user-auth-passphrase" type="password"></input>').appendTo(row);
+                    } else {
+                        $('<div class="form-row"><label for="projects-user-auth-username">Username</label><input id="projects-user-auth-username" type="text"></input></div>'+
+                          '<div class="form-row"><label for=projects-user-auth-password">Password</label><input id="projects-user-auth-password" type="password"></input></div>').appendTo(message);
+                    }
+
                     var notification = RED.notify(message,{
                         type:"error",
                         fixed: true,
@@ -1201,14 +1511,15 @@ RED.projects = (function() {
                             },{
                                 text: $('<span><i class="fa fa-refresh"></i> Retry</span>'),
                                 click: function() {
-                                    var username = $('#projects-user-auth-username').val();
-                                    var password = $('#projects-user-auth-password').val();
                                     body = body || {};
-                                    var authBody = {git:{remotes:{}}};
-                                    authBody.git.remotes[options.remote||'origin'] = {
-                                        username: username,
-                                        password: password
-                                    };
+                                    var authBody = {};
+                                    if (isSSH) {
+                                        authBody.keyFile = $('#projects-user-auth-key').val();
+                                        authBody.passphrase = $('#projects-user-auth-passphrase').val();
+                                    } else {
+                                        authBody.username = $('#projects-user-auth-username').val();
+                                        authBody.password = $('#projects-user-auth-password').val();
+                                    }
                                     var done = function(err) {
                                         if (err) {
                                             console.log("Failed to update auth");
@@ -1220,7 +1531,7 @@ RED.projects = (function() {
 
                                     }
                                     sendRequest({
-                                        url: "projects/"+activeProject.name,
+                                        url: "projects/"+activeProject.name+"/remotes/"+(options.remote||'origin'),
                                         type: "PUT",
                                         responses: {
                                             0: function(error) {
@@ -1235,7 +1546,7 @@ RED.projects = (function() {
                                                 }
                                             },
                                         }
-                                    },authBody);
+                                    },{auth:authBody});
                                 }
                             }
                         ]
@@ -1436,6 +1747,42 @@ RED.projects = (function() {
         // initSidebar();
     }
 
+    function createDefaultFileSet() {
+        if (!activeProject) {
+            throw new Error("Cannot create default file set without an active project");
+        } else if (!activeProject.empty) {
+            throw new Error("Cannot create default file set on a non-empty project");
+        }
+        if (!RED.user.hasPermission("projects.write")) {
+            RED.notify(RED._("user.errors.notAuthorized"),"error");
+            return;
+        }
+        createProjectOptions = {};
+        show('default-files',{existingProject: true});
+        // var payload = {
+        //
+        // }
+        // RED.deploy.setDeployInflight(true);
+        // utils.sendRequest({
+        //     url: "projects/"+activeProject.name,
+        //     type: "PUT",
+        //     responses: {
+        //         0: function(error) {},
+        //         200: function(data) {
+        //             activeProject = data;
+        //             RED.sidebar.versionControl.refresh(true);
+        //         },
+        //         400: {
+        //             'unexpected_error': function(error) {
+        //                 console.log(error);
+        //             }
+        //         },
+        //     }
+        // },payload).always(function() {
+        //     RED.deploy.setDeployInflight(false);
+        // });
+
+    }
 
     function refresh(done) {
         $.getJSON("projects",function(data) {
@@ -1463,9 +1810,17 @@ RED.projects = (function() {
     return {
         init: init,
         showStartup: function() {
+            if (!RED.user.hasPermission("projects.write")) {
+                RED.notify(RED._("user.errors.notAuthorized"),"error");
+                return;
+            }
             show('welcome');
         },
         newProject: function() {
+            if (!RED.user.hasPermission("projects.write")) {
+                RED.notify(RED._("user.errors.notAuthorized"),"error");
+                return;
+            }
             if (!activeProject) {
                 show('welcome');
             } else {
@@ -1473,17 +1828,34 @@ RED.projects = (function() {
             }
         },
         selectProject: function() {
+            if (!RED.user.hasPermission("projects.write")) {
+                RED.notify(RED._("user.errors.notAuthorized"),"error");
+                return;
+            }
             show('open')
         },
         deleteProject: function() {
+            if (!RED.user.hasPermission("projects.write")) {
+                RED.notify(RED._("user.errors.notAuthorized"),"error");
+                return;
+            }
             show('delete')
         },
         showCredentialsPrompt: function() { //TODO: rename this function
+            if (!RED.user.hasPermission("projects.write")) {
+                RED.notify(RED._("user.errors.notAuthorized"),"error");
+                return;
+            }
             RED.projects.settings.show('settings');
         },
         showFilesPrompt: function() { //TODO: rename this function
+            if (!RED.user.hasPermission("projects.write")) {
+                RED.notify(RED._("user.errors.notAuthorized"),"error");
+                return;
+            }
             RED.projects.settings.show('settings');
         },
+        createDefaultFileSet: createDefaultFileSet,
         // showSidebar: showSidebar,
         refresh: refresh,
         editProject: function() {

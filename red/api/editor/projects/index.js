@@ -77,7 +77,7 @@ module.exports = {
             //TODO: validate the payload properly
             if (req.body.active) {
                 var currentProject = runtime.storage.projects.getActiveProject(req.user);
-                if (req.params.id !== currentProject.name) {
+                if (!currentProject || req.params.id !== currentProject.name) {
                     runtime.storage.projects.setActiveProject(req.user, req.params.id).then(function() {
                         res.redirect(303,req.baseUrl + '/');
                     }).catch(function(err) {
@@ -90,6 +90,17 @@ module.exports = {
                 } else {
                     res.redirect(303,req.baseUrl + '/'+ req.params.id);
                 }
+            } else if (req.body.initialise) {
+                // Initialised set when creating default files for an empty repo
+                runtime.storage.projects.initialiseProject(req.user, req.params.id, req.body).then(function() {
+                    res.redirect(303,req.baseUrl + '/'+ req.params.id);
+                }).catch(function(err) {
+                    if (err.code) {
+                        res.status(400).json({error:err.code, message: err.message});
+                    } else {
+                        res.status(400).json({error:"unexpected_error", message:err.toString()});
+                    }
+                })
             } else if (req.body.hasOwnProperty('credentialSecret') ||
                        req.body.hasOwnProperty('description') ||
                        req.body.hasOwnProperty('dependencies')||
@@ -145,8 +156,11 @@ module.exports = {
                     res.status(404).end();
                 }
             }).catch(function(err) {
-                console.log(err.stack);
-                res.status(400).json({error:"unexpected_error", message:err.toString()});
+                if (err.code) {
+                    res.status(400).json({error:err.code, message: err.message});
+                } else {
+                    res.status(400).json({error:"unexpected_error", message:err.toString()});
+                }
             })
         });
 
@@ -154,12 +168,15 @@ module.exports = {
         // Project file listing
         app.get("/:id/files", needsPermission("projects.read"), function(req,res) {
             runtime.storage.projects.getFiles(req.user, req.params.id).then(function(data) {
-                console.log("TODO: REMOVE /:id/files as /:id/status is better!")
+                // console.log("TODO: REMOVE /:id/files as /:id/status is better!")
                 res.json(data);
             })
             .catch(function(err) {
-                console.log(err.stack);
-                res.status(400).json({error:"unexpected_error", message:err.toString()});
+                if (err.code) {
+                    res.status(400).json({error:err.code, message: err.message});
+                } else {
+                    res.status(400).json({error:"unexpected_error", message:err.toString()});
+                }
             })
         });
 
@@ -321,7 +338,6 @@ module.exports = {
                 res.status(204).end();
             })
             .catch(function(err) {
-                console.log(err.stack);
                 if (err.code) {
                     res.status(400).json({error:err.code, message: err.message});
                 } else {
@@ -465,8 +481,69 @@ module.exports = {
             })
         });
 
+        // Get a list of remotes
+        app.get("/:id/remotes", needsPermission("projects.read"), function(req, res) {
+            var projectName = req.params.id;
+            runtime.storage.projects.getRemotes(req.user, projectName).then(function(data) {
+                res.json(data);
+            })
+            .catch(function(err) {
+                console.log(err.stack);
+                if (err.code) {
+                    res.status(400).json({error:err.code, message: err.message});
+                } else {
+                    res.status(400).json({error:"unexpected_error", message:err.toString()});
+                }
+            })
+        });
 
+        // Add a remote
+        app.post("/:id/remotes", needsPermission("projects.write"), function(req,res) {
+            var projectName = req.params.id;
+            runtime.storage.projects.addRemote(req.user, projectName, req.body).then(function() {
+                res.redirect(303,req.baseUrl+"/"+projectName+"/remotes");
+            }).catch(function(err) {
+                console.log(err.stack);
+                if (err.code) {
+                    res.status(400).json({error:err.code, message: err.message});
+                } else {
+                    res.status(400).json({error:"unexpected_error", message:err.toString()});
+                }
+            })
+        });
 
+        // Delete a remote
+        app.delete("/:id/remotes/:remoteName", needsPermission("projects.write"), function(req, res) {
+            var projectName = req.params.id;
+            var remoteName = req.params.remoteName;
+            runtime.storage.projects.removeRemote(req.user, projectName, remoteName).then(function(data) {
+                res.redirect(303,req.baseUrl+"/"+projectName+"/remotes");
+            })
+            .catch(function(err) {
+                if (err.code) {
+                    res.status(400).json({error:err.code, message: err.message});
+                } else {
+                    res.status(400).json({error:"unexpected_error", message:err.toString()});
+                }
+            });
+        });
+
+        // Update a remote
+        app.put("/:id/remotes/:remoteName", needsPermission("projects.write"), function(req,res) {
+            var projectName = req.params.id;
+            var remoteName = req.params.remoteName;
+            runtime.storage.projects.updateRemote(req.user, projectName, remoteName, req.body).then(function(data) {
+                res.status(204).end();
+            })
+            .catch(function(err) {
+                if (err.code) {
+                    res.status(400).json({error:err.code, message: err.message});
+                } else {
+                    res.status(400).json({error:"unexpected_error", message:err.toString()});
+                }
+            });
+
+        });
 
         return app;
     }

@@ -23,6 +23,10 @@
 #project-settings-tab-settings {
     overflow-y: scroll;
 }
+.sidebar-version-control-shade {
+    background: #f3f3f3;
+}
+
 .projects-edit-form form {
     margin: 0;
     .form-row {
@@ -153,7 +157,7 @@
 }
 .projects-dialog-screen-create {
     min-height: 500px;
-    button.editor-button {
+    button.projects-dialog-screen-create-type {
         height: auto;
         padding: 10px;
 
@@ -165,6 +169,17 @@
 
 .projects-dialog-screen-secret {
     min-height: auto;
+}
+.projects-dialog-project-list-container {
+    border: 1px solid $secondary-border-color;
+    border-radius: 2px;
+}
+.projects-dialog-project-list-inner-container {
+    height: 300px;
+    overflow-y: scroll;
+    .red-ui-editableList-border {
+        border: none;
+    }
 }
 .projects-dialog-project-list {
     li {
@@ -203,8 +218,8 @@
         cursor: pointer;
         &:hover {
             background: #f3f3f3;
-            border-left-color: #aaa;
-            border-right-color: #aaa;
+            // border-left-color: #aaa;
+            // border-right-color: #aaa;
         }
     }
     i {
@@ -675,78 +690,178 @@
     }
 }
 
-.projects-dialog-remote-list-entry-header {
-    padding: 8px 10px;
-    background: #f6f6f6;
-    margin-bottom: 8px;
+.projects-dialog-sshkey-list {
+    li {
+        padding: 0 !important;
+    }
+    &.projects-dialog-sshkey-list-small {
+        .projects-dialog-sshkey-list-entry {
+            padding: 6px 0;
+            i {
+                font-size: 1em;
+            }
+        }
+        .projects-dialog-sshkey-list-entry-name {
+            font-size: 1em;
+        }
+        .projects-dialog-sshkey-list-entry-current {
+            margin-right: 10px;
+            padding-top: 2px;
+        }
+    }
 }
-.projects-dialog-remote-list-entry-delete {
-    float: right;
+.red-ui-editableList-container {
+    .projects-dialog-sshkey-list {
+        li:last-child {
+            border-bottom: 0px none;
+        }
+    }
 }
-.projects-dialog-remote-list-entry-copy {
-    float: right;
-}
-
-/*
-.expandable-list-entry {
-    .exandable-list-entry-header {
-        padding: 15px 0;
+.projects-dialog-sshkey-list-entry {
+    padding: 12px 0;
+    border-left: 3px solid #fff;
+    border-right: 3px solid #fff;
+    &.sshkey-list-entry-current {
+        &:not(.selectable) {
+            background: #f9f9f9;
+        }
+        i {
+            color: #999;
+        }
+    }
+    &.selectable {
         cursor: pointer;
         &:hover {
             background: #f3f3f3;
-        }
-        i {
-            width: 16px;
-            text-align: center;
-        }
-        .fa-angle-right {
-            color: #333;
-            transition: all 0.2s ease-in-out;
+            border-left-color: #aaa;
+            border-right-color: #aaa;
         }
     }
-    &.expanded .fa-angle-right {
-        transform: rotate(90deg);
-    }
-}
-*/
+    i {
+        color: #ccc;
+        font-size: 2em;
 
-.projects-dialog-branch-list {
-    .red-ui-editableList-container li:last-child {
-        border-bottom: none;
     }
-}
-
-.projects-dialog-branch-list-entry {
+    &.selected {
+        background: #efefef;
+        border-left-color:#999;
+        border-right-color:#999;
+    }
     span {
         display: inline-block;
+        vertical-align:middle;
     }
-    span:first-child {
-        text-align: center;
-        min-width: 30px;
+    .projects-dialog-sshkey-list-entry-icon {
+         margin: 0 10px 0 5px;
     }
-    .branch-name {
-        min-width: 150px;
+    .projects-dialog-sshkey-list-entry-name {
+        font-size: 1.2em;
     }
-    .branch-remote-name {
-        color: #aaa;
-        font-size: 0.9em;
-        min-width: 150px;
-    }
-    .branch-remote-status {
-        color: #aaa;
-        font-size: 0.9em;
-    }
-    .commit {
-        color: #aaa;
-        font-size: 0.9em;
-        padding: 2px 5px;
-
-    }
-
-    .projects-dialog-branch-list-entry-tools {
+    .projects-dialog-sshkey-list-entry-current {
         float: right;
         margin-right: 20px;
         font-size: 0.9em;
         color: #999;
+        padding-top: 4px;
+    }
+    .projects-dialog-sshkey-list-button-remove {
+        position: absolute;
+        right: 4px;
+    }
+}
+
+div.projects-dialog-ssh-public-key {
+    position: relative;
+    padding: 15px 20px 0;
+    pre {
+        position: relative;
+        word-break: break-all;
+    }
+    &:after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+}
+
+.projects-dialog-ssh-key-list {
+    li {
+        cursor: pointer;
+    }
+    li:hover {
+        background: #f3f3f3;
+    }
+}
+
+.projects-dialog-list {
+    position: relative;
+    .red-ui-editableList-container {
+        padding: 1px;
+        background: #f6f6f6;
+        li:last-child {
+            border-bottom: none;
+        }
+    }
+}
+
+.projects-dialog-list-entry {
+    &.red-ui-search-empty {
+        padding: 0;
+    }
+
+    span {
+        display: inline-block;
+    }
+    .entry-icon {
+        text-align: center;
+        min-width: 30px;
+        vertical-align: top;
+        color: #999;
+    }
+    .entry-name {
+        min-width: 250px;
+    }
+    &.current .entry-name {
+        font-weight: bold;
+    }
+    .entry-detail {
+        color: #aaa;
+        font-size: 0.9em;
+    }
+
+    .entry-remote-name {
+        min-width: 250px;
+    }
+
+
+    .entry-tools {
+        float: right;
+        margin-right: 10px;
+    }
+}
+.projects-dialog-list-dialog {
+    position: relative;
+    margin-top: 10px;
+    margin-bottom: 20px;
+    background: white;
+    border-radius: 4px;
+    border: 1px solid $secondary-border-color;
+    .projects-edit-form-sublabel {
+        margin-top: -8px !important;
+        display: block !important;
+        width: auto !important;
+    }
+    &:after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+
+    .projects-dialog-list-dialog-header {
+        font-weight: bold;
+        background: #f3f3f3;
+        margin-top: 0 !important;
+        padding: 5px 10px;
+        margin-bottom: 10px;
     }
 }
