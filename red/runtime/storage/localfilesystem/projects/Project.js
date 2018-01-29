@@ -23,7 +23,7 @@ var os = require('os');
 var gitTools = require("./git");
 var util = require("../util");
 var defaultFileSet = require("./defaultFileSet");
-var sshKeys = require("../sshkeys");
+var sshKeys = require("./ssh");
 var settings;
 var runtime;
 var log;
@@ -32,6 +32,27 @@ var projectsDir;
 
 var authCache = require("./git/authCache");
 
+// TODO: DRY - red/api/editor/sshkeys !
+function getSSHKeyUsername(userObj) {
+    var username = '__default';
+    if ( userObj && userObj.name ) {
+        username = userObj.name;
+    }
+    return username;
+}
+function getGitUser(user) {
+    var username;
+    if (!user) {
+        username = "_";
+    } else {
+        username = user.username;
+    }
+    var userSettings = settings.getUserSettings(username);
+    if (userSettings && userSettings.git) {
+        return userSettings.git.user;
+    }
+    return null;
+}
 function Project(name) {
     this.name = name;
     this.path = fspath.join(projectsDir,name);
@@ -144,7 +165,7 @@ Project.prototype.initialise = function(user,data) {
     return when.all(promises).then(function() {
         return gitTools.stageFile(project.path,files);
     }).then(function() {
-        return gitTools.commit(project.path,"Create project files");
+        return gitTools.commit(project.path,"Create project files",getGitUser(user));
     }).then(function() {
         return project.load()
     })
@@ -349,14 +370,7 @@ Project.prototype.unstageFile = function(file) {
     return gitTools.unstageFile(this.path,file);
 }
 Project.prototype.commit = function(user, options) {
-    var username;
-    if (!user) {
-        username = "_";
-    } else {
-        username = user.username;
-    }
-    var gitUser = this.git.user[username];
-    return gitTools.commit(this.path,options.message,gitUser);
+    return gitTools.commit(this.path,options.message,getGitUser(user));
 }
 Project.prototype.getFileDiff = function(file,type) {
     return gitTools.getFileDiff(this.path,file,type);
@@ -645,7 +659,7 @@ Project.prototype.updateRemote = function(user,remote,options) {
     if (options.auth) {
         var url = this.remotes[remote].fetch;
         if (options.auth.keyFile) {
-            options.auth.key_path = sshKeys.getPrivateKeyPath(username, options.auth.keyFile);
+            options.auth.key_path = sshKeys.getPrivateKeyPath(getSSHKeyUsername(user), options.auth.keyFile);
         }
         authCache.set(this.name,url,username,options.auth);
     }
@@ -662,7 +676,7 @@ Project.prototype.removeRemote = function(user, remote) {
 
 
 Project.prototype.getFlowFile = function() {
-    console.log("Project.getFlowFile = ",this.paths.flowFile);
+    // console.log("Project.getFlowFile = ",this.paths.flowFile);
     if (this.paths.flowFile) {
         return fspath.join(this.path,this.paths.flowFile);
     } else {
@@ -674,7 +688,7 @@ Project.prototype.getFlowFileBackup = function() {
     return getBackupFilename(this.getFlowFile());
 }
 Project.prototype.getCredentialsFile = function() {
-    console.log("Project.getCredentialsFile = ",this.paths.credentialsFile);
+    // console.log("Project.getCredentialsFile = ",this.paths.credentialsFile);
     if (this.paths.credentialsFile) {
         return fspath.join(this.path,this.paths.credentialsFile);
     } else {
@@ -727,8 +741,9 @@ function checkProjectExists(project) {
     var projectPath = fspath.join(projectsDir,project);
     return fs.pathExists(projectPath).then(function(exists) {
         if (!exists) {
-            var e = new Error("NLS: project not found");
+            var e = new Error("Project not found: "+project);
             e.code = "project_not_found";
+            e.project = project;
             throw e;
         }
     });
@@ -798,7 +813,7 @@ function createDefaultProject(user, project) {
         return when.all(promises).then(function() {
             return gitTools.stageFile(projectPath,files);
         }).then(function() {
-            return gitTools.commit(projectPath,"Create project");
+            return gitTools.commit(projectPath,"Create project",getGitUser(user));
         })
     });
 }
@@ -853,6 +868,11 @@ function createProject(user, metadata) {
             }
             createProjectDirectory(project).then(function() {
                 var projects = settings.get('projects');
+                if (!projects) {
+                    projects = {
+                        projects:{}
+                    }
+                }
                 projects.projects[project] = {};
                 if (metadata.hasOwnProperty('credentialSecret')) {
                     projects.projects[project].credentialSecret = metadata.credentialSecret;
@@ -872,7 +892,7 @@ function createProject(user, metadata) {
                     }
                     else if (originRemote.hasOwnProperty("keyFile") && originRemote.hasOwnProperty("passphrase")) {
                         authCache.set(project,originRemote.url,username,{ // TODO: hardcoded remote name
-                                key_path: sshKeys.getPrivateKeyPath(username, originRemote.keyFile),
+                                key_path: sshKeys.getPrivateKeyPath(getSSHKeyUsername(user), originRemote.keyFile),
                                 passphrase: originRemote.passphrase
                             }
                         );

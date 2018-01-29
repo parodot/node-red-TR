@@ -19,12 +19,14 @@ var sinon = require("sinon");
 var child_process = require('child_process');
 var EventEmitter = require("events");
 
-var ssh = require("../../../../../../red/runtime/storage/localfilesystem/projects/ssh")
+var keygen = require("../../../../../../../red/runtime/storage/localfilesystem/projects/ssh/keygen")
 
-describe("localfilesystem/projects/ssh", function() {
+describe("localfilesystem/projects/ssh/keygen", function() {
 
     afterEach(function() {
-        child_process.spawn.restore();
+        if (child_process.spawn.restore) {
+            child_process.spawn.restore();
+        }
     })
 
     it("invokes sshkeygen", function(done) {
@@ -46,8 +48,8 @@ describe("localfilesystem/projects/ssh", function() {
             return e;
         });
 
-        ssh.generateKey({
-            size: 123,
+        keygen.generateKey({
+            size: 1024,
             location: 'location',
             comment: 'comment',
             password: 'password'
@@ -63,66 +65,44 @@ describe("localfilesystem/projects/ssh", function() {
         var command;
         var args;
         var opts;
-        sinon.stub(child_process,"spawn", function(_command,_args,_opts) {
-            _command = command;
-            _args = args;
-            _opts = opts;
 
-            var e = new EventEmitter();
-            e.stdout = new EventEmitter();
-            e.stderr = new EventEmitter();
-            setTimeout(function() {
-                e.stdout.emit("data","result");
-                e.stderr.emit("data","passphrase is too short");
-                e.emit("close",1);
-            },5)
-            return e;
-        });
-
-        ssh.generateKey({
-            size: 123,
-            location: 'location',
-            comment: 'comment',
-            password: 'password'
-        }).then(function(output) {
-            done(new Error("Error not thrown"));
-        }).catch(function(err) {
+        try {
+            keygen.generateKey({
+                size: 1024,
+                location: 'location',
+                comment: 'comment',
+                password: '123'
+            }).then(function(output) {
+                done(new Error("Error not thrown"));
+            }).catch(function(err) {
+                done(new Error("Error not thrown"));
+            })
+        } catch(err) {
             err.should.have.property("code","key_passphrase_too_short");
             done();
-        })
+        }
     });
 
     it("reports key length too short", function(done) {
         var command;
         var args;
         var opts;
-        sinon.stub(child_process,"spawn", function(_command,_args,_opts) {
-            _command = command;
-            _args = args;
-            _opts = opts;
-
-            var e = new EventEmitter();
-            e.stdout = new EventEmitter();
-            e.stderr = new EventEmitter();
-            setTimeout(function() {
-                e.stdout.emit("data","result");
-                e.stderr.emit("data","Key must at least be 1024 bits");
-                e.emit("close",1);
-            },50)
-            return e;
-        });
-
-        ssh.generateKey({
-            size: 123,
-            location: 'location',
-            comment: 'comment',
-            password: 'password'
-        }).then(function(output) {
-            done(new Error("Error not thrown"));
-        }).catch(function(err) {
+        try {
+            keygen.generateKey({
+                size: 123,
+                location: 'location',
+                comment: 'comment',
+                password: 'password'
+            }).then(function(output) {
+                done(new Error("Error not thrown"));
+            }).catch(function(err) {
+                done(new Error("Error not thrown"));
+            })
+        } catch(err) {
             err.should.have.property("code","key_length_too_short");
             done();
-        })
+
+        }
     });
 
 

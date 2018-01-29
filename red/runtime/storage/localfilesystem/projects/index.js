@@ -31,11 +31,13 @@ var settings;
 var runtime;
 var log;
 
-var projectsEnabled = true;
+var projectsEnabled = false;
 var projectLogMessages = [];
 
 var projectsDir;
 var activeProject
+
+var globalGitUser = false;
 
 function init(_settings, _runtime) {
     settings = _settings;
@@ -43,12 +45,15 @@ function init(_settings, _runtime) {
     log = runtime.log;
 
     try {
-        if (settings.editorTheme.projects.enabled === false) {
+        if (settings.editorTheme.projects.enabled === true) {
             projectLogMessages.push(log._("storage.localfilesystem.projects.disabled"))
-            projectsEnabled = false;
+            projectsEnabled = true;
+        } else if (settings.editorTheme.projects.enabled === false) {
+            projectLogMessages.push(log._("storage.localfilesystem.projects.disabled"))
         }
     } catch(err) {
-        projectsEnabled = true;
+        projectLogMessages.push(log._("storage.localfilesystem.projects.disabledNoFlag"))
+        projectsEnabled = false;
     }
 
     if (settings.flowFile) {
@@ -85,45 +90,48 @@ function init(_settings, _runtime) {
     var setupProjectsPromise;
 
     if (projectsEnabled) {
-        return gitTools.init(_settings, _runtime).then(function(gitVersion) {
-            if (!gitVersion) {
-                projectLogMessages.push(log._("storage.localfilesystem.projects.git-not-found"))
-                projectsEnabled = false;
-            } else {
-                Projects.init(settings,runtime);
-                sshTools.init(settings,runtime);
-                projectsDir = fspath.join(settings.userDir,"projects");
-                if (!settings.readOnly) {
-                    return fs.ensureDir(projectsDir)
-                    //TODO: this is accessing settings from storage directly as settings
-                    //      has not yet been initialised. That isn't ideal - can this be deferred?
-                    .then(storageSettings.getSettings)
-                    .then(function(globalSettings) {
-                        var saveSettings = false;
-                        if (!globalSettings.projects) {
-                            globalSettings.projects = {
-                                projects: {}
-                            }
-                            saveSettings = true;
-                        } else {
-                            activeProject = globalSettings.projects.activeProject;
-                        }
-                        if (settings.flowFile) {
-                            if (globalSettings.projects.projects.hasOwnProperty(settings.flowFile)) {
-                                activeProject = settings.flowFile;
-                                globalSettings.projects.activeProject = settings.flowFile;
+        return sshTools.init(settings,runtime).then(function() {
+            gitTools.init(_settings, _runtime).then(function(gitConfig) {
+                if (!gitConfig) {
+                    projectLogMessages.push(log._("storage.localfilesystem.projects.git-not-found"))
+                    projectsEnabled = false;
+                } else {
+                    globalGitUser = gitConfig.user;
+                    Projects.init(settings,runtime);
+                    sshTools.init(settings,runtime);
+                    projectsDir = fspath.join(settings.userDir,"projects");
+                    if (!settings.readOnly) {
+                        return fs.ensureDir(projectsDir)
+                        //TODO: this is accessing settings from storage directly as settings
+                        //      has not yet been initialised. That isn't ideal - can this be deferred?
+                        .then(storageSettings.getSettings)
+                        .then(function(globalSettings) {
+                            var saveSettings = false;
+                            if (!globalSettings.projects) {
+                                globalSettings.projects = {
+                                    projects: {}
+                                }
                                 saveSettings = true;
+                            } else {
+                                activeProject = globalSettings.projects.activeProject;
                             }
-                        }
-                        if (!activeProject) {
-                            projectLogMessages.push(log._("storage.localfilesystem.no-active-project"))
-                        }
-                        if (saveSettings) {
-                            return storageSettings.saveSettings(globalSettings);
-                        }
-                    });
+                            if (settings.flowFile) {
+                                if (globalSettings.projects.projects.hasOwnProperty(settings.flowFile)) {
+                                    activeProject = settings.flowFile;
+                                    globalSettings.projects.activeProject = settings.flowFile;
+                                    saveSettings = true;
+                                }
+                            }
+                            if (!activeProject) {
+                                projectLogMessages.push(log._("storage.localfilesystem.no-active-project"))
+                            }
+                            if (saveSettings) {
+                                return storageSettings.saveSettings(globalSettings);
+                            }
+                        });
+                    }
                 }
-            }
+            });
         });
     }
     return Promise.resolve();
@@ -429,6 +437,8 @@ function getFlows() {
         initialFlowLoadComplete = true;
         log.info(log._("storage.localfilesystem.user-dir",{path:settings.userDir}));
         if (activeProject) {
+            // At this point activeProject will be a string, so go load it and
+            // swap in an instance of Project
             return loadProject(activeProject).then(function() {
                 log.info(log._("storage.localfilesystem.projects.active-project",{project:activeProject.name||"none"}));
                 log.info(log._("storage.localfilesystem.flows-file",{path:flowsFullPath}));
@@ -548,10 +558,12 @@ module.exports = {
     updateRemote: updateRemote,
     getFlowFilename: getFlowFilename,
     getCredentialsFilename: getCredentialsFilename,
-
+    getGlobalGitUser: function() { return globalGitUser },
     getFlows: getFlows,
     saveFlows: saveFlows,
     getCredentials: getCredentials,
-    saveCredentials: saveCredentials
+    saveCredentials: saveCredentials,
+
+    ssh: sshTools
 
 };
