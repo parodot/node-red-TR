@@ -54,10 +54,11 @@ module.exports = {
             var activeProject = runtime.storage.projects.getActiveProject();
             if (activeProject) {
                 safeSettings.project = activeProject;
-            }
-            safeSettings.files = {
-                flow: runtime.storage.projects.getFlowFilename(),
-                credentials: runtime.storage.projects.getCredentialsFilename()
+            } else if (runtime.storage.projects.flowFileExists()) {
+                safeSettings.files = {
+                    flow: runtime.storage.projects.getFlowFilename(),
+                    credentials: runtime.storage.projects.getCredentialsFilename()
+                }
             }
             safeSettings.git = {
                 globalUser: runtime.storage.projects.getGlobalGitUser()
@@ -90,7 +91,7 @@ module.exports = {
         settings.setUserSettings(username, currentSettings).then(function() {
             log.audit({event: "settings.update",username:username},req);
             res.status(204).end();
-        }).otherwise(function(err) {
+        }).catch(function(err) {
             log.audit({event: "settings.update",username:username,error:err.code||"unexpected_error",message:err.toString()},req);
             res.status(400).json({error:err.code||"unexpected_error", message:err.toString()});
         });

@@ -20,16 +20,18 @@ module.exports = function(RED) {
 
     function CheerioNode(n) {
         RED.nodes.createNode(this,n);
+        this.property = n.property||"payload";
         this.tag = n.tag;
         this.ret = n.ret || "html";
         this.as = n.as || "single";
         var node = this;
         this.on("input", function(msg) {
-            if (msg.hasOwnProperty("payload")) {
+            var value = RED.util.getMessageProperty(msg,node.property);
+            if (value !== undefined) {
                 var tag = node.tag;
                 if (msg.hasOwnProperty("select")) { tag = node.tag || msg.select; }
                 try {
-                    var $ = cheerio.load(msg.payload);
+                    var $ = cheerio.load(value);
                     var pay = [];
                     var count = 0;
                     $(tag).each(function() {
@@ -45,15 +47,16 @@ module.exports = function(RED) {
                             //if (node.ret === "val")  { pay2 = $(this).val(); }
                             /* istanbul ignore else */
                             if (pay2) {
-                                msg.payload = pay2;
-                                msg.parts = {
+                                var new_msg = RED.util.cloneMessage(msg);
+                                RED.util.setMessageProperty(new_msg,node.property,pay2);
+                                new_msg.parts = {
                                     id: msg._msgid,
                                     index: index,
                                     count: count,
                                     type: "string",
                                     ch: ""
                                 };
-                                node.send(msg);
+                                node.send(new_msg);
                             }
                         }
                         if (node.as === "single") {
@@ -65,7 +68,7 @@ module.exports = function(RED) {
                         index++;
                     });
                     if (node.as === "single") {  // Always return an array - even if blank
-                        msg.payload = pay;
+                        RED.util.setMessageProperty(msg,node.property,pay);
                         node.send(msg);
                     }
                 }
