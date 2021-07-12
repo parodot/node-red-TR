@@ -15,20 +15,23 @@
  **/
 
 var should = require("should");
-var sinon = require("sinon");
 var path = require("path");
 var fs = require('fs-extra');
 
-var htmlNode = require("../../../../nodes/core/parsers/70-HTML.js");
-var helper = require("../../helper.js");
+var htmlNode = require("nr-test-utils").require("@node-red/nodes/core/parsers/70-HTML.js");
+var helper = require("node-red-node-test-helper");
 
-describe('html node', function() {
+describe('HTML node', function() {
 
     var resourcesDir = __dirname+ path.sep + ".." + path.sep + ".." + path.sep + ".." + path.sep + "resources" + path.sep;
     var file = path.join(resourcesDir, "70-HTML-test-file.html");
 
     before(function(done) {
         helper.startServer(done);
+    });
+
+    after(function(done) {
+        helper.stopServer(done);
     });
 
     beforeEach(function() {
@@ -66,7 +69,7 @@ describe('html node', function() {
         });
     });
 
-    it('should retrieve header contents if asked to by msg.select - alternative property', function(done) {
+    it('should retrieve header contents if asked to by msg.select - alternative in property', function(done) {
         fs.readFile(file, 'utf8', function(err, data) {
             var flow = [{id:"n1",type:"html",property:"foo",wires:[["n2"]],func:"return msg;"},
                         {id:"n2", type:"helper"}];
@@ -76,10 +79,28 @@ describe('html node', function() {
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
                     msg.should.have.property('topic', 'bar');
-                    should.equal(msg.foo, 'This is a test page for node 70-HTML');
+                    msg.foo[0].should.equal('This is a test page for node 70-HTML');
                     done();
                 });
                 n1.receive({foo:data,topic:"bar",select:"h1"});
+            });
+        });
+    });
+
+    it('should retrieve header contents if asked to by msg.select - alternative in and out properties', function(done) {
+        fs.readFile(file, 'utf8', function(err, data) {
+            var flow = [{id:"n1",type:"html",property:"foo",outproperty:"bar",tag:"h1",wires:[["n2"]],func:"return msg;"},
+                        {id:"n2", type:"helper"}];
+
+            helper.load(htmlNode, flow, function() {
+                var n1 = helper.getNode("n1");
+                var n2 = helper.getNode("n2");
+                n2.on("input", function(msg) {
+                    msg.should.have.property('topic', 'bar');
+                    msg.bar[0].should.equal('This is a test page for node 70-HTML');
+                    done();
+                });
+                n1.receive({foo:data,topic:"bar"});
             });
         });
     });
@@ -207,16 +228,20 @@ describe('html node', function() {
                     var n1 = helper.getNode("n1");
                     var n2 = helper.getNode("n2");
                     n1.receive({payload:null,topic: "bar"});
-                    helper.log().called.should.be.true();
-                    var logEvents = helper.log().args.filter(function(evt) {
-                        return evt[0].type == "html";
-                    });
-                    logEvents.should.have.length(1);
-                    // Each logEvent is the array of args passed to the function.
-                    logEvents[0][0].should.have.a.property('msg');
-                    logEvents[0][0].should.have.a.property('level',helper.log().ERROR);
+                    setTimeout(function() {
+                        try {
+                            helper.log().called.should.be.true();
+                            var logEvents = helper.log().args.filter(function(evt) {
+                                return evt[0].type == "html";
+                            });
+                            logEvents.should.have.length(1);
+                            // Each logEvent is the array of args passed to the function.
+                            logEvents[0][0].should.have.a.property('msg');
+                            logEvents[0][0].should.have.a.property('level',helper.log().ERROR);
 
-                    done();
+                            done();
+                        } catch(err) { done(err) }
+                    },50);
                 } catch(err) {
                     done(err);
                 }

@@ -15,13 +15,17 @@
  **/
 
 var should = require("should");
-var yamlNode = require("../../../../nodes/core/parsers/70-YAML.js");
-var helper = require("../../helper.js");
+var yamlNode = require("nr-test-utils").require("@node-red/nodes/core/parsers/70-YAML.js");
+var helper = require("node-red-node-test-helper");
 
 describe('YAML node', function() {
 
     before(function(done) {
         helper.startServer(done);
+    });
+
+    after(function(done) {
+        helper.stopServer(done);
     });
 
     afterEach(function() {
@@ -126,14 +130,18 @@ describe('YAML node', function() {
                 var yn1 = helper.getNode("yn1");
                 var yn2 = helper.getNode("yn2");
                 yn1.receive({payload:'employees:\n-firstName: John\n- lastName: Smith\n',topic: "bar"});
-                var logEvents = helper.log().args.filter(function(evt) {
-                    return evt[0].type == "yaml";
-                });
-                logEvents.should.have.length(1);
-                logEvents[0][0].should.have.a.property('msg');
-                logEvents[0][0].msg.should.startWith("end of the stream");
-                logEvents[0][0].should.have.a.property('level',helper.log().ERROR);
-                done();
+                setTimeout(function() {
+                    try {
+                        var logEvents = helper.log().args.filter(function(evt) {
+                            return evt[0].type == "yaml";
+                        });
+                        logEvents.should.have.length(1);
+                        logEvents[0][0].should.have.a.property('msg');
+                        logEvents[0][0].msg.should.startWith("end of the stream");
+                        logEvents[0][0].should.have.a.property('level',helper.log().ERROR);
+                        done();
+                    } catch(err) { done(err) }
+                },50);
             } catch(err) {
                 done(err);
             }
@@ -165,7 +173,7 @@ describe('YAML node', function() {
             },150);
             yn1.receive({payload:true});
             yn1.receive({payload:1});
-            yn1.receive({payload:new Buffer("a")});
+            yn1.receive({payload:Buffer.from("a")});
         });
     });
 
