@@ -15,20 +15,23 @@
  **/
 
 var should = require("should");
-var sinon = require("sinon");
 var path = require("path");
 var fs = require('fs-extra');
 
-var htmlNode = require("../../../../nodes/core/parsers/70-HTML.js");
-var helper = require("../../helper.js");
+var htmlNode = require("nr-test-utils").require("@node-red/nodes/core/parsers/70-HTML.js");
+var helper = require("node-red-node-test-helper");
 
-describe('html node', function() {
+describe('HTML node', function() {
 
     var resourcesDir = __dirname+ path.sep + ".." + path.sep + ".." + path.sep + ".." + path.sep + "resources" + path.sep;
     var file = path.join(resourcesDir, "70-HTML-test-file.html");
 
     before(function(done) {
         helper.startServer(done);
+    });
+
+    after(function(done) {
+        helper.stopServer(done);
     });
 
     beforeEach(function() {
@@ -57,16 +60,22 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('topic', 'bar');
-                    should.equal(msg.payload, 'This is a test page for node 70-HTML');
-                    done();
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        should.equal(msg.payload, 'This is a test page for node 70-HTML');
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
-                n1.receive({payload:data,topic:"bar",select:"h1"});
+                // include 'body' in the select to verify we're in document mode
+                // for the parser. See https://github.com/node-red/node-red/issues/3079
+                n1.receive({payload:data,topic:"bar",select:"body h1"});
             });
         });
     });
 
-    it('should retrieve header contents if asked to by msg.select - alternative property', function(done) {
+    it('should retrieve header contents if asked to by msg.select - alternative in property', function(done) {
         fs.readFile(file, 'utf8', function(err, data) {
             var flow = [{id:"n1",type:"html",property:"foo",wires:[["n2"]],func:"return msg;"},
                         {id:"n2", type:"helper"}];
@@ -75,11 +84,37 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('topic', 'bar');
-                    should.equal(msg.foo, 'This is a test page for node 70-HTML');
-                    done();
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        msg.foo[0].should.equal('This is a test page for node 70-HTML');
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
                 n1.receive({foo:data,topic:"bar",select:"h1"});
+            });
+        });
+    });
+
+    it('should retrieve header contents if asked to by msg.select - alternative in and out properties', function(done) {
+        fs.readFile(file, 'utf8', function(err, data) {
+            var flow = [{id:"n1",type:"html",property:"foo",outproperty:"bar",tag:"h1",wires:[["n2"]],func:"return msg;"},
+                        {id:"n2", type:"helper"}];
+
+            helper.load(htmlNode, flow, function() {
+                var n1 = helper.getNode("n1");
+                var n2 = helper.getNode("n2");
+                n2.on("input", function(msg) {
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        msg.bar[0].should.equal('This is a test page for node 70-HTML');
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
+                });
+                n1.receive({foo:data,topic:"bar"});
             });
         });
     });
@@ -93,10 +128,14 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('topic', 'bar');
-                    msg.should.have.property('payload');
-                    msg.payload.should.be.empty;
-                    done();
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        msg.should.have.property('payload');
+                        msg.payload.should.be.empty;
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
                 n1.receive({payload:data,topic:"bar",select:"h4"});
             });
@@ -112,9 +151,13 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('topic', 'bar');
-                    should.equal(msg.payload, 'There\'s nothing to read here.');
-                    done();
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        should.equal(msg.payload, 'There\'s nothing to read here.');
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
                 n1.receive({payload:data,topic: "bar"});
             });
@@ -130,10 +173,14 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('topic', 'bar');
-                    msg.payload[0].indexOf("<li>Blue</li>").should.be.above(-1);
-                    msg.payload[0].indexOf("<li>Red</li>").should.be.above(-1);
-                    done();
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        msg.payload[0].indexOf("<li>Blue</li>").should.be.above(-1);
+                        msg.payload[0].indexOf("<li>Red</li>").should.be.above(-1);
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
                 n1.receive({payload:data,topic: "bar"});
             });
@@ -149,11 +196,14 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('topic', 'bar');
-                    msg.payload[0].indexOf("Blue").should.be.above(-1);
-                    msg.payload[0].indexOf("Red").should.be.above(-1);
-                    done();
-
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        msg.payload[0].indexOf("Blue").should.be.above(-1);
+                        msg.payload[0].indexOf("Red").should.be.above(-1);
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
                 n1.receive({payload:data,topic: "bar"});
             });
@@ -169,9 +219,13 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('topic', 'bar');
-                    should.equal(msg.payload, '<img src="foo.png"/>');
-                    done();
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        should.equal(msg.payload, '<img src="foo.png"/>');
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
                 n1.receive({payload:data,topic: "bar"});
             });
@@ -187,10 +241,14 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('payload');
-                    msg.payload[0].should.have.property('src','foo.png');
-                    msg.should.have.property('topic', 'bar');
-                    done();
+                    try {
+                        msg.should.have.property('payload');
+                        msg.payload[0].should.have.property('src','foo.png');
+                        msg.should.have.property('topic', 'bar');
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
                 n1.receive({payload:data,topic: "bar"});
             });
@@ -207,16 +265,20 @@ describe('html node', function() {
                     var n1 = helper.getNode("n1");
                     var n2 = helper.getNode("n2");
                     n1.receive({payload:null,topic: "bar"});
-                    helper.log().called.should.be.true();
-                    var logEvents = helper.log().args.filter(function(evt) {
-                        return evt[0].type == "html";
-                    });
-                    logEvents.should.have.length(1);
-                    // Each logEvent is the array of args passed to the function.
-                    logEvents[0][0].should.have.a.property('msg');
-                    logEvents[0][0].should.have.a.property('level',helper.log().ERROR);
+                    setTimeout(function() {
+                        try {
+                            helper.log().called.should.be.true();
+                            var logEvents = helper.log().args.filter(function(evt) {
+                                return evt[0].type == "html";
+                            });
+                            logEvents.should.have.length(1);
+                            // Each logEvent is the array of args passed to the function.
+                            logEvents[0][0].should.have.a.property('msg');
+                            logEvents[0][0].should.have.a.property('level',helper.log().ERROR);
 
-                    done();
+                            done();
+                        } catch(err) { done(err) }
+                    },50);
                 } catch(err) {
                     done(err);
                 }
@@ -233,9 +295,13 @@ describe('html node', function() {
                 var n1 = helper.getNode("n1");
                 var n2 = helper.getNode("n2");
                 n2.on("input", function(msg) {
-                    msg.should.have.property('topic', 'bar');
-                    msg.should.not.have.property('payload');
-                    done();
+                    try {
+                        msg.should.have.property('topic', 'bar');
+                        msg.should.not.have.property('payload');
+                        done();
+                    } catch(err) {
+                        done(err)
+                    }
                 });
                 n1.receive({topic: "bar"});
             });
@@ -276,20 +342,25 @@ describe('html node', function() {
                     var n1 = helper.getNode("n1");
                     var n2 = helper.getNode("n2");
                     n2.on("input", function(msg) {
-                        cnt++;
-                        msg.should.have.property('topic', 'bar');
-                        check_parts(msg, cnt -1, 2);
-                        if (cnt !== 1 && cnt !== 2) {
-                            return false;
+                        try {
+                            cnt++;
+                            msg.should.have.property('topic', 'bar');
+                            check_parts(msg, cnt -1, 2);
+                            if (cnt !== 1 && cnt !== 2) {
+                                return false;
+                            }
+                            if (cnt === 1) {
+                                msg.payload.indexOf("<li>Apple</li>").should.be.above(-1);
+                                msg.payload.indexOf("<li>Pear</li>").should.be.above(-1);
+                            } else if (cnt === 2) {
+                                msg.payload.indexOf("<li>Potato</li>").should.be.above(-1);
+                                msg.payload.indexOf("<li>Parsnip</li>").should.be.above(-1);
+                                done();
+                            }
+                        } catch(err) {
+                            done(err)
                         }
-                        if (cnt === 1) {
-                            msg.payload.indexOf("<li>Apple</li>").should.be.above(-1);
-                            msg.payload.indexOf("<li>Pear</li>").should.be.above(-1);
-                        } else if (cnt === 2) {
-                            msg.payload.indexOf("<li>Potato</li>").should.be.above(-1);
-                            msg.payload.indexOf("<li>Parsnip</li>").should.be.above(-1);
-                            done();
-                        }
+
                     });
                     n1.receive({payload:data,topic: "bar"});
                 });
@@ -306,19 +377,23 @@ describe('html node', function() {
                     var n1 = helper.getNode("n1");
                     var n2 = helper.getNode("n2");
                     n2.on("input", function(msg) {
-                        cnt++;
-                        msg.should.have.property('topic', 'bar');
-                        check_parts(msg, cnt -1, 2);
-                        if (cnt !== 1 && cnt !== 2) {
-                            return false;
-                        }
-                        if (cnt === 1) {
-                            msg.foo.indexOf("<li>Apple</li>").should.be.above(-1);
-                            msg.foo.indexOf("<li>Pear</li>").should.be.above(-1);
-                        } else if (cnt === 2) {
-                            msg.foo.indexOf("<li>Potato</li>").should.be.above(-1);
-                            msg.foo.indexOf("<li>Parsnip</li>").should.be.above(-1);
-                            done();
+                        try {
+                            cnt++;
+                            msg.should.have.property('topic', 'bar');
+                            check_parts(msg, cnt -1, 2);
+                            if (cnt !== 1 && cnt !== 2) {
+                                return false;
+                            }
+                            if (cnt === 1) {
+                                msg.foo.indexOf("<li>Apple</li>").should.be.above(-1);
+                                msg.foo.indexOf("<li>Pear</li>").should.be.above(-1);
+                            } else if (cnt === 2) {
+                                msg.foo.indexOf("<li>Potato</li>").should.be.above(-1);
+                                msg.foo.indexOf("<li>Parsnip</li>").should.be.above(-1);
+                                done();
+                            }
+                        } catch(err) {
+                            done(err)
                         }
                     });
                     n1.receive({foo:data, topic:"bar"});
@@ -335,19 +410,23 @@ describe('html node', function() {
                     var n1 = helper.getNode("n1");
                     var n2 = helper.getNode("n2");
                     n2.on("input", function(msg) {
-                        cnt++;
-                        msg.should.have.property('topic', 'bar');
-                        check_parts(msg, cnt -1, 2);
-                        if (cnt !== 1 && cnt !== 2) {
-                            return false;
-                        }
-                        if (cnt === 1) {
-                            msg.payload.indexOf("Apple").should.be.above(-1);
-                            msg.payload.indexOf("Pear").should.be.above(-1);
-                        } else if (cnt === 2) {
-                            msg.payload.indexOf("Potato").should.be.above(-1);
-                            msg.payload.indexOf("Parsnip").should.be.above(-1);
-                            done();
+                        try {
+                            cnt++;
+                            msg.should.have.property('topic', 'bar');
+                            check_parts(msg, cnt -1, 2);
+                            if (cnt !== 1 && cnt !== 2) {
+                                return false;
+                            }
+                            if (cnt === 1) {
+                                msg.payload.indexOf("Apple").should.be.above(-1);
+                                msg.payload.indexOf("Pear").should.be.above(-1);
+                            } else if (cnt === 2) {
+                                msg.payload.indexOf("Potato").should.be.above(-1);
+                                msg.payload.indexOf("Parsnip").should.be.above(-1);
+                                done();
+                            }
+                        } catch(err) {
+                            done(err)
                         }
                     });
                     n1.receive({payload:data,topic: "bar"});
@@ -364,12 +443,16 @@ describe('html node', function() {
                     var n1 = helper.getNode("n1");
                     var n2 = helper.getNode("n2");
                     n2.on("input", function(msg) {
-                        msg.should.have.property('payload');
-                        msg.payload.should.have.property('src','foo.png');
-                        msg.should.have.property('topic', 'bar');
-                        check_parts(msg, 0, 1);
-                        cnt = 2;  // frig the answer as only one img tag
-                        done();
+                        try {
+                            msg.should.have.property('payload');
+                            msg.payload.should.have.property('src','foo.png');
+                            msg.should.have.property('topic', 'bar');
+                            check_parts(msg, 0, 1);
+                            cnt = 2;  // frig the answer as only one img tag
+                            done();
+                        } catch(err) {
+                            done(err)
+                        }
                     });
                     n1.receive({payload:data,topic: "bar"});
                 });
@@ -386,15 +469,19 @@ describe('html node', function() {
                     var n2 = helper.getNode("n2");
                     var prev_msg = undefined;
                     n2.on("input", function(msg) {
-                        cnt++;
-                        if (prev_msg == undefined) {
-                            prev_msg = msg;
-                        }
-                        else {
-                            msg.should.not.equal(prev_msg);
-                        }
-                        if (cnt == 2) {
-                            done();
+                        try {
+                            cnt++;
+                            if (prev_msg == undefined) {
+                                prev_msg = msg;
+                            }
+                            else {
+                                msg.should.not.equal(prev_msg);
+                            }
+                            if (cnt == 2) {
+                                done();
+                            }
+                        } catch(err) {
+                            done(err)
                         }
                     });
                     n1.receive({payload:data,topic: "bar"});
